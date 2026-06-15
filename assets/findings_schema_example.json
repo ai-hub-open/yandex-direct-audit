@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "slug": "example-shop",
+    "client_login": "example-login",
+    "period": "2025-05-01..2025-05-31",
+    "compared_to": "2025-04-01..2025-04-30",
+    "attribution_model": "LYDCCD",
+    "kpi": { "cpa": 1500, "drr": 0.15 },
+    "limitations": [
+      "Метрика не привязана к кампании «РСЯ-Тест» — конверсии и отказы по ней не оценены",
+      "api_call MCP не достаёт /json/v5/reports — срез по площадкам собран частично из report_campaign"
+    ]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "area": "placements",
+      "severity": "high",
+      "title": "Площадка games.example.com сливает бюджет без конверсий",
+      "evidence": "Расход 12 400 ₽ за 30 дней, 620 кликов, 0 конверсий, CTR 3.1% в сети",
+      "threshold": "Сеть: ноль конверсий при заметном расходе + CTR ≥2% (подозрение на клик под кнопкой/фрод)",
+      "recommendation": "Добавить площадку в ExcludedSites кампании «РСЯ-1» (внедряет маркетолог)",
+      "expected_effect": "Высвобождение ~12 400 ₽/мес на конвертящие площадки",
+      "confidence": "high",
+      "volume_note": "достаточно данных"
+    },
+    {
+      "id": "F2",
+      "area": "structure",
+      "severity": "high",
+      "title": "К кампании «РСЯ-Тест» не привязан счётчик Метрики",
+      "evidence": "CounterIds пуст; поля Conversions/BounceRate приходят пустыми",
+      "threshold": "Нет целей → оптимизация по конверсиям невозможна",
+      "recommendation": "Привязать счётчик и настроить цели до любой оптимизации ставок",
+      "expected_effect": "Появляется база для конверсионной аналитики и автостратегий",
+      "confidence": "high",
+      "volume_note": "n/a"
+    },
+    {
+      "id": "F3",
+      "area": "bid_modifiers",
+      "severity": "medium",
+      "title": "Мобайл тратит непропорционально без отдачи",
+      "evidence": "MOBILE = 68% расхода кампании «Поиск-1», CPA 2 300 ₽ против KPI 1 500 ₽",
+      "threshold": "Сегмент с большим расходом и CPA выше KPI → отрицательная корректировка",
+      "recommendation": "Гипотеза: корректировка MOBILE −20%, пересмотреть через 2 недели",
+      "expected_effect": "Снижение среднего CPA кампании",
+      "confidence": "medium",
+      "volume_note": "достаточно данных"
+    },
+    {
+      "id": "F4",
+      "area": "creatives",
+      "severity": "low",
+      "title": "В группе «Поиск-1 / Бренд» одно объявление",
+      "evidence": "AdGroupId 123 — 1 объявление, теста вариантов нет",
+      "threshold": "Группа с одним объявлением → нет A/B",
+      "recommendation": "Добавить 2-й вариант заголовка для теста",
+      "expected_effect": "Потенциальный рост CTR/CR через тест",
+      "confidence": "medium",
+      "volume_note": "n/a"
+    }
+  ]
+}
