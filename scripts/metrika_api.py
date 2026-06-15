@@ -42,9 +42,14 @@ YANDEX_METRIKA_TOKEN, затем YANDEX_DIRECT_TOKEN (если токен оди
   # посмотреть, какой запрос уйдёт, без вызова API
   python -m scripts.metrika_api --counter 12345678 --preset placements --dry-run
 
-Важно про атрибуцию: дефолт Метрики сменился на 'lastsign' (последний значимый
-переход). Всегда фиксируй одну модель на весь аудит и указывай её рядом с числами.
-Для вклада Директа полезно сравнить с 'last_yandex_direct_click'.
+Важно про атрибуцию: модель берётся ОТДЕЛЬНО для каждой кампании Директа; если
+в кампании не задана (или API её не отдаёт) — используется LSCCD ('cross_device_
+last_significant', последний значимый переход с кросс-девайсом).
+Direct и Метрика называют одни и те же модели по-разному — соответствие зашито
+в ATTRIBUTION_MODELS (это единый источник правды), поэтому --attribution принимает
+И Direct-коды (FC/LC/LSC/LYDC/FCCD/LCCD/LSCCD/LYDCCD/AUTO), И имена Метрики
+(first/last/lastsign/...). Фиксируй одну модель на весь срез и указывай её рядом
+с числами. Вывести карту моделей: python -m scripts.metrika_api --show-attribution-map.
 """
 
 import argparse
@@ -63,13 +68,62 @@ GOALS_URL = "https://api-metrika.yandex.net/management/v1/counter/{counter}/goal
 # Прокси для регионов с сетевыми ограничениями (опционально).
 # Если задана переменная HTTPS_PROXY/HTTP_PROXY — urllib подхватит сам.
 
-ATTRIBUTIONS = {
-    "first": "first",
-    "last": "last",
-    "lastsign": "lastsign",            # дефолт Метрики
-    "last_direct": "last_yandex_direct_click",
-    "cross_last_sign": "cross_device_last_significant",
+# ─────────────────────────────────────────────────────────────────────────────
+# ЕДИНЫЙ СЛОВАРЬ АТРИБУЦИИ — источник правды для сопоставления Direct ↔ Метрика.
+# Одна и та же модель называется по-разному в двух системах; здесь она сведена.
+#   ключ      — код модели в Direct (Reports API, параметр AttributionModels)
+#   "metrika" — имя модели в Метрике (параметр attribution И префикс среза ym:s:)
+#   "ru"      — человекочитаемое имя
+# Правило выбора: бери модель ОТДЕЛЬНО для каждой кампании Директа;
+# если в кампании не задана — LSCCD (последний значимый переход, кросс-девайс).
+ATTRIBUTION_MODELS = {
+    "FC":     {"metrika": "first",                                 "ru": "Первый переход"},
+    "LC":     {"metrika": "last",                                  "ru": "Последний переход"},
+    "LSC":    {"metrika": "lastsign",                              "ru": "Последний значимый переход"},
+    "LYDC":   {"metrika": "last_yandex_direct_click",              "ru": "Последний переход из Яндекс Директа"},
+    "FCCD":   {"metrika": "cross_device_first",                    "ru": "Первый переход (кросс-девайс)"},
+    "LCCD":   {"metrika": "cross_device_last",                     "ru": "Последний переход (кросс-девайс)"},
+    "LSCCD":  {"metrika": "cross_device_last_significant",         "ru": "Последний значимый переход (кросс-девайс)"},
+    "LYDCCD": {"metrika": "cross_device_last_yandex_direct_click", "ru": "Последний переход из Директа (кросс-девайс)"},
+    "AUTO":   {"metrika": "automatic",                             "ru": "Автоматическая атрибуция"},
 }
+
+# Любое написание (Direct-код / имя Метрики / старый алиас CLI) → канонический Direct-код.
+_ALIAS_TO_CODE: Dict[str, str] = {}
+for _code, _m in ATTRIBUTION_MODELS.items():
+    _ALIAS_TO_CODE[_code.lower()] = _code
+    _ALIAS_TO_CODE[_m["metrika"].lower()] = _code
+_ALIAS_TO_CODE.update({                 # обратная совместимость со старым CLI
+    "last_direct": "LYDC",
+    "cross_last_sign": "LSCCD",
+    "auto": "AUTO",
+})
+
+
+def resolve_code(value: str) -> str:
+    """Любое написание модели → канонический Direct-код."""
+    code = _ALIAS_TO_CODE.get((value or "").strip().lower())
+    if not code:
+        sys.exit(f"Неизвестная модель атрибуции: {value!r}. Допустимо: "
+                 f"Direct-коды {list(ATTRIBUTION_MODELS)} или имена Метрики "
+                 f"{[m['metrika'] for m in ATTRIBUTION_MODELS.values()]}.")
+    return code
+
+
+def attr_metrika(value: str) -> str:
+    """Любое написание модели → имя для Метрики (параметр attribution и префикс среза)."""
+    return ATTRIBUTION_MODELS[resolve_code(value)]["metrika"]
+
+
+def attribution_map_json() -> str:
+    rows = [{"direct": code, "metrika": m["metrika"], "ru": m["ru"]}
+            for code, m in ATTRIBUTION_MODELS.items()]
+    return json.dumps({
+        "rule": "Бери модель ОТДЕЛЬНО для каждой кампании Директа; "
+                "если в кампании не задана — LSCCD (последний значимый переход, кросс-девайс).",
+        "default": "LSCCD",
+        "attribution_models": rows,
+    }, ensure_ascii=False, indent=2)
 
 
 def get_token() -> str:
@@ -81,15 +135,10 @@ def get_token() -> str:
              "(или YANDEX_DIRECT_TOKEN, если токен общий) со скоупом metrika:read.")
 
 
-def attr_prefix(attribution: str) -> str:
-    """Возвращает префикс среза с учётом модели атрибуции для ym:s: полей."""
-    return ATTRIBUTIONS.get(attribution, attribution)
-
-
 def build_preset(preset: str, attribution: str, goal: Optional[str],
                  segment: Optional[str]) -> Dict[str, str]:
     """Возвращает {metrics, dimensions, filters} для пресета."""
-    a = attr_prefix(attribution)
+    a = attr_metrika(attribution)
     behavioral = "ym:s:visits,ym:s:bounceRate,ym:s:pageDepth,ym:s:avgVisitDurationSeconds"
     goal_metrics = (f",ym:s:goal{goal}reaches,ym:s:goal{goal}conversionRate"
                     if goal else ",ym:s:sumGoalReachesAny")
@@ -179,10 +228,10 @@ def fetch_stat(counter: str, token: str, metrics: str, dimensions: str,
         "accuracy": "full",
         "limit": str(limit),
         # Метрика принимает в параметре attribution: first|last|lastsign|
-        # last_yandex_direct_click|cross_device_last_significant и т.д.
+        # last_yandex_direct_click|cross_device_last_significant|automatic и т.д.
         # Берём ту же модель, что и в срезе, чтобы метрики целей считались
-        # согласованно с измерением.
-        "attribution": attr_prefix(attribution),
+        # согласованно с измерением. attr_metrika принимает и Direct-коды.
+        "attribution": attr_metrika(attribution),
     }
     if filters:
         params["filters"] = filters
@@ -198,9 +247,15 @@ def fetch_stat(counter: str, token: str, metrics: str, dimensions: str,
         dims = [d.get("name") for d in item.get("dimensions", [])]
         rows.append({"dimensions": dims, "metrics": item.get("metrics", [])})
     return {
-        "query": {"metrics": metrics, "dimensions": dimensions,
-                  "filters": filters, "attribution": params["attribution"],
-                  "period": f"{date1}..{date2}"},        "total_rows": raw.get("total_rows"),
+        "query": {
+            "metrics": metrics,
+            "dimensions": dimensions,
+            "filters": filters,
+            "attribution_metrika": params["attribution"],
+            "attribution_direct": resolve_code(attribution),
+            "period": f"{date1}..{date2}",
+        },
+        "total_rows": raw.get("total_rows"),
         "metric_names": metrics.split(","),
         "dimension_names": dimensions.split(","),
         "rows": rows,
@@ -209,15 +264,20 @@ def fetch_stat(counter: str, token: str, metrics: str, dimensions: str,
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Read-only доступ к Yandex Metrika API")
-    ap.add_argument("--counter", required=True, help="ID счётчика Метрики")
+    ap.add_argument("--counter", help="ID счётчика Метрики (не нужен для --show-attribution-map)")
     ap.add_argument("--preset", choices=["goals", "placements", "queries",
                                          "attribution", "segments"],
                     help="готовый сценарий аудита")
     ap.add_argument("--segment", choices=["device", "gender", "age", "geo"],
                     help="для preset=segments")
     ap.add_argument("--goal", help="goal_id для конверсионных метрик")
-    ap.add_argument("--attribution", default="lastsign",
-                    help="first|last|lastsign|last_direct|cross_last_sign")
+    ap.add_argument("--attribution", default="LSCCD",
+                    help="модель атрибуции: Direct-код (FC/LC/LSC/LYDC/FCCD/LCCD/"
+                         "LSCCD/LYDCCD/AUTO) или имя Метрики (first/last/lastsign/"
+                         "automatic/...). Дефолт LSCCD (последний значимый, "
+                         "кросс-девайс) — если в кампании модель не задана.")
+    ap.add_argument("--show-attribution-map", action="store_true",
+                    help="вывести единую карту моделей атрибуции Direct↔Метрика и выйти")
     ap.add_argument("--metrics", help="произвольные метрики ym:s:... через запятую")
     ap.add_argument("--dimensions", help="произвольные измерения ym:s:...")
     ap.add_argument("--filters", help="произвольный фильтр Метрики")
@@ -228,6 +288,13 @@ def main() -> None:
                     help="показать запрос, не вызывая API")
     ap.add_argument("--out", help="куда писать JSON (иначе stdout)")
     args = ap.parse_args()
+
+    if args.show_attribution_map:
+        sys.stdout.write(attribution_map_json())
+        return
+
+    if not args.counter:
+        sys.exit("Нужен --counter (или вызови --show-attribution-map).")
 
     token = "DRY" if args.dry_run else get_token()
 
