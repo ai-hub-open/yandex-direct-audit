@@ -10,3 +10,5 @@ direct-audits/
 __pycache__/
 *.pyc
 _regions_cache.json
+
+yandex-direct-audit.zip
