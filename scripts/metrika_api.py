@@ -126,7 +126,37 @@ def attribution_map_json() -> str:
     }, ensure_ascii=False, indent=2)
 
 
+def load_local_env() -> None:
+    """Подхватывает токен из файла `.env` (корень проекта и текущий каталог).
+    Чистый stdlib, без зависимостей. Реальные переменные окружения имеют
+    приоритет — их НЕ перезаписываем (та же логика, что у MCP)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(os.path.dirname(here), ".env"),  # корень проекта (на уровень выше scripts/)
+        os.path.join(os.getcwd(), ".env"),            # текущий каталог запуска
+    ]
+    seen = set()
+    for path in candidates:
+        if path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, val = line.partition("=")
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+        except OSError:
+            pass
+
+
 def get_token() -> str:
+    load_local_env()
     for var in ("YANDEX_METRIKA_TOKEN", "YANDEX_DIRECT_TOKEN"):
         tok = os.environ.get(var)
         if tok:
@@ -263,6 +293,14 @@ def fetch_stat(counter: str, token: str, metrics: str, dimensions: str,
 
 
 def main() -> None:
+    # Windows-консоль часто в cp1251 — принудительно UTF-8, чтобы кириллица
+    # (имена целей/кампаний) не превращалась в «кракозябры» при выводе.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     ap = argparse.ArgumentParser(description="Read-only доступ к Yandex Metrika API")
     ap.add_argument("--counter", help="ID счётчика Метрики (не нужен для --show-attribution-map)")
     ap.add_argument("--preset", choices=["goals", "placements", "queries",
