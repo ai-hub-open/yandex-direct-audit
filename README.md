@@ -20,7 +20,7 @@
 0. Скоуп аудита (логин, период, KPI, счётчик/цели)
 1. Инвентаризация и структурный аудит
 2. Статистика по кампаниям (+ атрибуционный кросс-чек Метрики)
-3. ⭐ Майнинг поисковых запросов → минусация — **субагент** `/search-queries`
+3. ⭐ Майнинг поисковых запросов: минусация + действия по фразам (ядро бывшего phrase-minus) — **субагент** `/search-queries`
 4. ⭐ Чистка площадок РСЯ (ядро бывшего rsya-minus) — **субагент** `/rsya-placements`
 5. ⭐ Корректировки ставок (точки роста) — **субагент** `/bid-segments`
 6. Объявления и релевантность
@@ -33,6 +33,8 @@
 Все субагенты помечены `disable-model-invocation: true` (сами не запускаются) и несут **read-only** набор тулов.
 
 **Шаг 4 — это перенесённый внутрь аудита движок бывшего отдельного скилла `yandex-direct-rsya-minus`**: анализатор `analyze_placements.py` + словарь `placement_patterns.json` + ruleset `rsya-minus-rules.md`. Он отдаёт готовый к вставке `minus_list.txt` по кампаниям.
+
+**Шаг 3 — это движок бывшего скилла `yandex-direct-phrase-minus`** (`search-query-miner`): `query_analyzer.py` + `run_analysis.py` + словарь `query_patterns.json` + ruleset `phrase-minus-rules.md`. За один прогон даёт минусацию запросов (минус-слова кампании + минус-фразы группы → `minus_keywords.txt`) и действия по ключевым фразам (ставки/статус → `03_phrase_actions.md`).
 
 ## Структура
 
@@ -47,25 +49,29 @@ yandex-direct-audit/
 │   ├── optimization-playbook.md
 │   ├── custom-report-recipes.md
 │   ├── report-template.md
-│   └── rsya-minus-rules.md          (ruleset минусации площадок, Шаг 4)
+│   ├── rsya-minus-rules.md          (ruleset минусации площадок, Шаг 4)
+│   └── phrase-minus-rules.md        (ruleset минусации запросов + действий по фразам, Шаг 3)
 ├── subagents/                        (форк-субагенты, context: fork)
-│   ├── search-queries/               ← Шаг 3
+│   ├── search-queries/               ← Шаг 3 (ядро phrase-minus)
 │   ├── rsya-placements/              ← Шаг 4 (ядро rsya-minus)
 │   └── bid-segments/                 ← Шаг 5
 ├── scripts/
 │   ├── normalize_report.py
 │   ├── metrika_api.py
 │   ├── render_report.py
-│   └── analyze_placements.py         (ядро минусации площадок РСЯ)
+│   ├── analyze_placements.py         (ядро минусации площадок РСЯ, Шаг 4)
+│   ├── query_analyzer.py             (ядро минусации запросов, Шаг 3)
+│   └── run_analysis.py               (CLI-обёртка минусации запросов, Шаг 3)
 ├── assets/
 │   ├── findings_schema_example.json
-│   └── placement_patterns.json       (словарь мусорных/watch имён площадок)
+│   ├── placement_patterns.json       (словарь мусорных/watch имён площадок)
+│   └── query_patterns.json           (словарь паттернов запросов + города)
 └── evals/evals.json
 ```
 
 ## Имена артефактов
 
-Рабочая папка: `direct-audits/<slug>/`. `00_scope.md` · `_state.json` · `01_account_map.{md,json}` · `02_campaign_performance.{md,json}` · `03_negative_candidates.{md,json}` · `04_placement_candidates.{md,json}` + `minus_list.txt` · `05_bid_modifier_opportunities.{md,json}` · `06_creative_findings.{md,json}` · `findings.json` → `АУДИТ_<slug>.pdf`.
+Рабочая папка: `direct-audits/<slug>/`. `00_scope.md` · `_state.json` · `01_account_map.{md,json}` · `02_campaign_performance.{md,json}` · `03_negative_candidates.json` + `minus_keywords.txt` + `03_phrase_actions.md` · `04_placement_candidates.{md,json}` + `minus_list.txt` · `05_bid_modifier_opportunities.{md,json}` · `06_creative_findings.{md,json}` · `findings.json` → `АУДИТ_<slug>.pdf`.
 
 ## Принципы
 
