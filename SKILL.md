@@ -45,6 +45,7 @@ description: Read-only аудит и поиск точек роста в УЖЕ 
 - `scripts/metrika_api.py` — read-only доступ к Яндекс.Метрике (Reporting API + список целей) через OAuth-токен в окружении. Пресеты `goals / attribution / placements / queries / segments` тянут поведение и конверсии и кладут их на сущности Директа через Direct-срезы. `--dry-run` показывает запрос без вызова API. См. `references/metrika-integration.md`.
 - `scripts/render_report.py` — собирает финальный **PDF-отчёт** (стиль «дашборд») из `findings.json`: строит HTML с оформлением и печатает его в PDF уже установленным Chrome/Edge (headless). Внешних pip-пакетов не требует. `--input <findings.json>` обязателен; `--output <pdf>` и `--open` — опционально. Используется на Шаге 7. См. `references/report-template.md`.
 - `scripts/analyze_placements.py` — ядро минусации площадок РСЯ (Шаг 4, перенесено из rsya-minus): парсит TSV отчёта по площадкам → сворачивает до уровня площадки → пороги от целевого CPA + гейт объёма + словарь мусорных имён (`assets/placement_patterns.json`) → пишет `candidates.json` + `minus_list.txt` + `report.md`. Read-only, ничего не отключает. Логика порогов — `references/rsya-minus-rules.md`.
+- `scripts/query_analyzer.py` + `scripts/run_analysis.py` — ядро минусации поисковых запросов (Шаг 3, перенесено из phrase-minus): по отчёту запросов даёт два результата — минусацию (минус-слова кампании по словарю `assets/query_patterns.json` + минус-фразы группы) и действия по ключевым фразам (отключить/понизить/поднять ставку по CPA) → пишет `queries_candidates.json` + `minus_keywords.txt` + `phrase_actions.md`. Read-only. Логика порогов — `references/phrase-minus-rules.md`.
 
 ---
 
@@ -159,25 +160,27 @@ python -m scripts.metrika_api --counter <id> --preset attribution --goal <id> --
 
 **[GATE: маркетолог]** Покажи 5-10 строк сводки: «Вот картина по кампаниям. Копаем глубже в <худшие по CPA>?»
 
-## Шаг 3. Майнинг поисковых запросов (минусация)  [делегируется субагенту]
+## Шаг 3. Майнинг поисковых запросов  [делегируется субагенту — движок phrase-minus]
 
-Самый «грязный» по контексту шаг на Поиске (огромный TSV всех запросов) вынесен в изолированный субагент `/search-queries` (`context: fork`). Он читает раздел «Поисковые запросы → минусация» в `references/audit-thresholds.md`, «ПОИСК → Минусовка» в `optimization-playbook.md` и queries-часть `metrika-integration.md`, тянет отчёт, нормализует, ищет минус-кандидатов (расход + 0 конверсий и/или высокий отказ; **не трогает запросы с <5 переходов**), обогащает поведением из Метрики и группирует по темам.
+Тяжёлый отчёт по запросам + вся логика минусации вынесены в изолированный субагент `/search-queries` (`context: fork`). Это перенесённый внутрь аудита движок бывшего скилла phrase-minus: он тянет `report_search_queries`, прогоняет `scripts/run_analysis.py` (пороги, словарь паттернов, режим без конверсий) и за один прогон даёт **два** результата:
+1. **Минусация запросов** — минус-слова уровня кампании (мусор/инфо/работа/чужое гео/конкуренты по словарю) + минус-фразы уровня группы (≥25 кликов без конверсий) + список «проверь вручную» → готовый к вставке `minus_keywords.txt`.
+2. **Действия по ключевым фразам** — отключить (расход ≥2×CPA, 0 конверсий) / понизить ставку (CPA ≥1.5×CPA) / поднять ставку + в отдельную группу (CPA ниже среднего) / мало данных / норма → `03_phrase_actions.md`.
 
-**Что готовит оркестратор:** список поисковых `campaign_ids` (Поиск + поисковая часть ЕПК) из `01_account_map.json`.
+**Что готовит оркестратор:** список поисковых `campaign_ids` (Поиск + поисковая часть ЕПК) из `01_account_map.json` + целевой CPA из скоупа (+ опц. целевые регионы и бренды конкурентов).
 
 **Вызов:**
 
 ```
-/search-queries <slug> "<поисковые campaign_ids>" "<период>"
+/search-queries <slug> "<поисковые campaign_ids>" "<период>" "<tCPA>"
 ```
 
-**Субагент возвращает:** сводку ≤20 строк (кандидатов в минус, топ-темы, оценка экономии) + пути к `03_negative_candidates.md` и `03_negative_candidates.json`. Сырьё (полный TSV) остаётся в форке.
+**Субагент возвращает:** сводку ≤20 строк (действия по фразам 🔴/🟠/🟢/⚪, счётчики минус-слов/фраз, оценка экономии) + пути к `03_negative_candidates.json`, **`minus_keywords.txt`** и `03_phrase_actions.md`. Сырьё (`03_search_queries.tsv`) остаётся в форке. Если цели Метрики не привязаны (нет конверсий) — субагент работает в режиме без конверсий (минусы по паттернам остаются, действия по ставкам отключаются) и поднимает «алярму».
 
-**Если субагент недоступен** — выполни Шаг 3 инлайн по `references/audit-thresholds.md` (раздел поисковых запросов) + `optimization-playbook.md` (ПОИСК → Минусовка), используя `report_search_queries` + `scripts/normalize_report.py` + `metrika_api.py --preset queries`. Те же артефакты.
+**Если субагент недоступен** — выполни Шаг 3 инлайн: собери `report_search_queries`, прогони `python scripts/run_analysis.py --input <tsv> --tcpa <X>` по `references/phrase-minus-rules.md`, обогати `metrika_api.py --preset queries`. Те же артефакты.
 
-**Артефакт:** `03_negative_candidates.md` + `03_negative_candidates.json`. Это **рекомендации**, не правки.
+**Артефакт:** `03_negative_candidates.json` + `minus_keywords.txt` + `03_phrase_actions.md`. Это **рекомендации**, не правки.
 
-**[GATE: маркетолог]** Покажи сводку субагента: «Вот кандидаты в минус по темам. Какие берём, какие оставляем?»
+**[GATE: маркетолог]** Покажи сводку субагента: «Вот минус-слова/фразы (`minus_keywords.txt` готов к вставке) и что сделать со ставками фраз. Что берём?»
 
 ## Шаг 4. Чистка площадок РСЯ  [делегируется субагенту — ядро rsya-minus]
 
@@ -303,6 +306,8 @@ PDF — это и есть финальный отчёт для маркетол
 
 02_campaign_performance.json ──→ Шаг 7 (приоритизация по расходу/CPA + воронка)
 03_negative_candidates.json ───→ Шаг 7
+   + minus_keywords.txt (минус-слова кампании + минус-фразы группы, готов к вставке)
+   + 03_phrase_actions.md (действия по ключевым фразам: ставки/статус)
 04_placement_candidates.json ──→ Шаг 7
    + minus_list.txt (готовый список для вставки в «Запрещённые площадки», по кампаниям)
 05_bid_modifier_opportunities.json ──→ Шаг 7
@@ -319,7 +324,7 @@ findings.json ──(scripts/render_report.py)──→ АУДИТ_<slug>.pdf (�
 
 | Субагент | Шаг | Что делает | Что возвращает |
 |---|---|---|---|
-| `/search-queries` | 3 | `report_search_queries` → нормализация → минус-кандидаты (порог <5 переходов не трогаем) → группировка по темам + поведение из Метрики | сводку ≤20 строк + `03_negative_candidates.{md,json}` |
+| `/search-queries` | 3 | движок phrase-minus: `report_search_queries` → `run_analysis.py` (словарь паттернов, пороги) → минус-слова кампании + минус-фразы группы + действия по фразам (ставки/статус) + кросс-чек Метрикой | сводку ≤20 строк + `03_negative_candidates.json` + **`minus_keywords.txt`** + `03_phrase_actions.md` |
 | `/rsya-placements` | 4 | CUSTOM_REPORT по площадкам → `analyze_placements.py` (пороги, гейт объёма, словарь мусора) → поведение из Метрики | сводку + `04_placement_candidates.{md,json}` + **`minus_list.txt`** |
 | `/bid-segments` | 5 | `bidmodifiers_get` + срезы Device/Пол-Возраст/Гео/Час → недо/переэффективные сегменты + поведение из Метрики | сводку + `05_bid_modifier_opportunities.{md,json}` |
 
