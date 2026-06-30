@@ -23,7 +23,7 @@
     "ReportType": "CUSTOM_REPORT",
     "DateRangeType": "CUSTOM_DATE",
     "Format": "TSV",
-    "IncludeVAT": "NO"
+    "IncludeVAT": "YES"
   }
 }
 ```
@@ -33,6 +33,8 @@
 
 ⚠️ `ReportName` должен быть **уникальным** в рамках аккаунта — добавляй timestamp/slug, иначе повторный запрос вернёт ошибку «отчёт с таким именем уже есть».
 
+⚠️ Считаем **С НДС** (`IncludeVAT: YES`) — это реальные деньги рекламодателя; политика единая для всего аудита, чтобы расход по площадкам/сегментам сходился с расходом по кампаниям.
+
 ---
 
 ## Рецепт 1: Площадки РСЯ (Шаг 4)
@@ -40,21 +42,27 @@
 ```json
 {
   "FieldNames": [
-    "Placement", "AdNetworkType", "CampaignName",
-    "Impressions", "Clicks", "Ctr", "Cost",
-    "Conversions", "CostPerConversion", "BounceRate"
+    "CampaignName", "CampaignId", "AdNetworkType", "Placement",
+    "Device", "LocationOfPresenceName",
+    "Impressions", "Clicks", "Ctr", "Cost", "AvgCpc",
+    "Conversions", "ConversionRate", "CostPerConversion",
+    "Revenue", "BounceRate"
   ],
   "SelectionCriteria": {
     "Filter": [
-      { "Field": "AdNetworkType", "Operator": "EQUALS", "Values": ["AD_NETWORK"] }
+      { "Field": "AdNetworkType", "Operator": "EQUALS", "Values": ["AD_NETWORK"] },
+      { "Field": "Impressions", "Operator": "GREATER_THAN", "Values": ["0"] }
     ]
   }
 }
 ```
 
-- Группировка по `Placement` идёт автоматически от набора полей.
-- Если есть цели — добавь `Goals` и `AttributionModels` в params; поля конверсий разобьются по целям/моделям.
-- `BounceRate` придёт только при связке с Метрикой — иначе пусто (см. ограничение №2 в `mcp-tools-map.md`).
+- Группировка по `Placement` идёт автоматически от набора полей. `Device` и `LocationOfPresenceName` дробят каждую площадку на под-строки — `analyze_placements.py` сворачивает их обратно до уровня площадки, а разбивку держит как контекст «почему» (`by_device` / `by_geo`).
+- **С НДС:** `IncludeVAT: YES` (как весь аудит). `ReportName` уникален — добавляй timestamp/slug.
+- Фильтр `Impressions > 0` отсекает площадки без показов. Анализатор сам дублирует фильтры `AD_NETWORK` и `Impressions > 0` на своей стороне — на случай, если они не применились.
+- Если есть цели — добавь `Goals` и `AttributionModels` в params; поля конверсий разобьются по целям/моделям (`Conversions_<goal>_<model>`) — сверни их в один `Conversions` (сумма) перед прогоном анализатора.
+- `BounceRate` придёт только при связке с Метрикой — иначе пусто (см. ограничение №2 в `mcp-tools-map.md`); поведение по площадке надёжнее тянуть из Метрики (`metrika_api.py --preset placements`).
+- Полный ruleset порогов по этим полям — `references/rsya-minus-rules.md`; ядро — `scripts/analyze_placements.py`.
 
 ## Рецепт 2: Срез по устройствам (Шаг 5)
 
