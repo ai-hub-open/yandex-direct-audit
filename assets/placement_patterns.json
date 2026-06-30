@@ -1,0 +1,17 @@
+{
+  "_comment": "Паттерны имён площадок РСЯ (regex, регистр игнорируется). trash — превентивный минус даже при малом объёме. watch — под вопросом, решаем по цифрам. Дополняй по своим нишам.",
+  "trash": [
+    "game", "games", "игр", "play", "flash", "poki", "crazygames", "miniclip",
+    "фонар", "flashlight", "обои", "wallpaper", "погод", "weather",
+    "кэшбэк", "кешбэк", "cashback", "едадил", "edadeal",
+    "купон", "coupon", "promokod", "промокод", "скидк",
+    "чита", "читалк", "книг.*онлайн", "flibusta", "litres-pirat",
+    "vpn", "proxy", "расширени", "extension",
+    "взлом", "crack", "keygen", "torrent", "\\.apk", "mp3", "скачать.*беспл"
+  ],
+  "watch": [
+    "otzovik", "отзовик", "irecommend", "айрекоменд", "otzyv",
+    "rutube", "kinopoisk", "кинопоиск", "видеохост", "yandex\\.video",
+    "agregator", "агрегатор", "sravni", "price", "market\\.", "avito"
+  ]
+}
