@@ -30,7 +30,7 @@ analyze_placements.py — ядро минусации площадок РСЯ Я
     - CTR > 3% и 0 конверсий -> 🟠 кандидат (подозрение на фрод)
     - усиливается дешёвым кликом и отказами > 30%.
 
-  Отказы (если есть Метрика): BounceRate > 30% при clicks >= MIN_CLICKS -> усиливает кандидата.
+  Отказы (если к кампании привязан счётчик): BounceRate > 30% при clicks >= MIN_CLICKS -> усиливает кандидата.
 
 Категории на выходе:
   🔴 minus_sure        — минусовать точно
@@ -281,7 +281,7 @@ def classify(a, tcpa, camp_avg_cpa, patterns, min_clicks, ctr_warn, ctr_fraud,
             bump("minus_candidate")
             reasons.append(f"CTR {ctr:.1f}% > {ctr_warn:g}% (норма РСЯ 0.3–0.8%) и 0 конверсий — подозрение на фрод.")
 
-    # --- Отказы (Метрика) ---
+    # --- Отказы ---
     if a["bounce"] is not None and a["bounce"] > bounce_thr and rate_sufficient:
         if severity in ("minus_candidate", "minus_sure"):
             reasons.append(f"Отказы {a['bounce']:.0f}% > {bounce_thr:g}% — усиливает решение.")
@@ -310,12 +310,13 @@ def main():
     ap.add_argument("--outdir", default=".", help="Куда писать candidates.json / minus_list.txt / report.md.")
     ap.add_argument("--tcpa", type=float, default=None, help="Целевой CPA глобально (₽).")
     ap.add_argument("--tcpa-map", default=None, help='JSON {"Имя кампании": tCPA} — целевой CPA по кампаниям.')
-    ap.add_argument("--money-in-rub", action="store_true",
-                    help="Деньги в отчёте уже в рублях (по умолчанию считаем микро ÷1e6).")
+    ap.add_argument("--money-in-micros", action="store_true",
+                    help="Деньги в отчёте в микро — делить на 1e6. По умолчанию считаем рубли: "
+                         "коннектор Директа отдаёт отчёты уже в рублях.")
     ap.add_argument("--min-clicks", type=int, default=30, help="Порог кликов для rate-сигналов (CTR/отказы/CR).")
-    ap.add_argument("--ctr-warn", type=float, default=3.0, help="CTR выше этого (%) + 0 конв -> подозрение.")
-    ap.add_argument("--ctr-fraud", type=float, default=5.0, help="CTR выше этого (%) -> почти наверняка фрод.")
-    ap.add_argument("--bounce", type=float, default=30.0, help="Отказы выше этого (%) -> плохая аудитория.")
+    ap.add_argument("--ctr-warn", type=float, default=3.0, help="CTR выше этого (%%) + 0 конв -> подозрение.")
+    ap.add_argument("--ctr-fraud", type=float, default=5.0, help="CTR выше этого (%%) -> почти наверняка фрод.")
+    ap.add_argument("--bounce", type=float, default=30.0, help="Отказы выше этого (%%) -> плохая аудитория.")
     ap.add_argument("--cpa-cand", type=float, default=1.5, help="CPA/база ≥ этого -> кандидат.")
     ap.add_argument("--cpa-strong", type=float, default=2.0, help="CPA/база ≥ этого -> сильный кандидат.")
     args = ap.parse_args()
@@ -335,7 +336,7 @@ def main():
             if (r.get("adnetworktype", "").upper() in ("", "AD_NETWORK"))
             and r.get("impressions", 0.0) > 0]
 
-    placements, camp_avg_cpa = aggregate(rows, money_in_micros=not args.money_in_rub)
+    placements, camp_avg_cpa = aggregate(rows, money_in_micros=args.money_in_micros)
 
     results = []
     for (camp, place), a in placements.items():

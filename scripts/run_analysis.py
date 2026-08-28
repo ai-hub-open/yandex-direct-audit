@@ -120,8 +120,9 @@ def write_phrase_actions_md(outdir, res):
     with open(os.path.join(outdir, "phrase_actions.md"), "w", encoding="utf-8") as f:
         f.write("# Действия по ключевым фразам\n\n")
         if not res.get("phrases_enabled", True):
-            f.write("> Нет данных по конверсиям (цели Метрики не привязаны) — "
-                    "рекомендации по ставкам недоступны. См. скилл `metrika-goals-setup`.\n")
+            f.write("> Нет данных по конверсиям: к кампании не привязан счётчик Метрики либо не "
+                    "настроены цели. Пока этого нет, рекомендации по ставкам давать не на чем — "
+                    "любое решение будет угадыванием. Настройка целей — задача №1.\n")
             return
         f.write("| Кампания | Фраза | Действие | Расход ₽ | Клики | Конв. | CPA ₽ | Причина |\n")
         f.write("|---|---|---|--:|--:|--:|--:|---|\n")
@@ -150,7 +151,9 @@ def main(argv=None):
     ap.add_argument("--tcpa-map", default=None, help='JSON {"Кампания": tCPA}.')
     ap.add_argument("--target-geo", default="")
     ap.add_argument("--competitors", default="")
-    ap.add_argument("--money-in-rub", action="store_true", help="Деньги уже в рублях (не делить на 1e6).")
+    ap.add_argument("--money-in-micros", action="store_true",
+                    help="Деньги в отчёте в микро — делить на 1e6. По умолчанию считаем рубли: "
+                         "коннектор Директа отдаёт отчёты уже в рублях.")
     ap.add_argument("--no-conversions", action="store_true", help="В отчёте нет конверсий.")
     ap.add_argument("--phrase-min-clicks", type=int, default=30)
     ap.add_argument("--query-min-clicks", type=int, default=25)
@@ -167,7 +170,7 @@ def main(argv=None):
             tcpa_map = json.load(f)
     target_geo = [g.strip() for g in args.target_geo.split(",") if g.strip()]
     competitors = [c.strip() for c in args.competitors.split(",") if c.strip()]
-    money_div = 1.0 if args.money_in_rub else 1_000_000.0
+    money_div = 1_000_000.0 if args.money_in_micros else 1.0
 
     res = analyze(rows, tcpa_global=args.tcpa, tcpa_map=tcpa_map, target_geo=target_geo,
                   competitors=competitors, patterns=patterns,

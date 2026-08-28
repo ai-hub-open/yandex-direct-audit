@@ -1,186 +1,114 @@
-# Рецепты CUSTOM_REPORT через `yandex_direct_api_call`
+# Рецепты CUSTOM_REPORT через `yandex_direct_report_custom`
 
-Дедикейтед report-тулы MCP покрывают `campaign / ad / search_queries`. Срезы по площадкам и сегментам (устройство/пол/возраст/гео/час) собираем `CUSTOM_REPORT`'ом через сырой `yandex_direct_api_call` к эндпоинту отчётов.
+Дедикейтед report-тулы покрывают `campaign / ad / search_queries`. Срезы по площадкам и сегментам (устройство/пол/возраст/гео/час) собираются тулом `yandex_direct_report_custom`.
 
 ## Прежде чем использовать
 
-Сначала прочти раздел «Сырой api_call» в `mcp-tools-map.md`. **Проверь, что `api_call` достаёт до `/json/v5/reports`** (отдельный эндпоинт, формат ответа — TSV, не JSON). Если нет — это ограничение, фиксируй в отчёте и не выдумывай данные.
+Прочти в `mcp-tools-map.md` два раздела: **«CUSTOM_REPORT через `report_custom`»** (таблица параметров) и **«Правила объёма отчётов»** (чанкинг, `page_limit`, фильтры, офлайн-очередь). Рецепты ниже дают только состав полей — правила объёма обязательны к каждому из них.
 
-## Общая форма запроса к Reports
+## Общая форма вызова
 
-Тело CUSTOM_REPORT (передаётся в `api_call` как payload к reports-эндпоинту):
-
-```json
-{
-  "params": {
-    "SelectionCriteria": {
-      "DateFrom": "2025-05-01",
-      "DateTo": "2025-05-31",
-      "Filter": []
-    },
-    "FieldNames": [],
-    "ReportName": "audit_<уникальное_имя>",
-    "ReportType": "CUSTOM_REPORT",
-    "DateRangeType": "CUSTOM_DATE",
-    "Format": "TSV",
-    "IncludeVAT": "YES"
-  }
-}
+```
+yandex_direct_report_custom({
+  report_type: "CUSTOM_REPORT",
+  fields: [ ... ],                       // см. рецепты
+  date_from: "2025-05-01",
+  date_to:   "2025-05-31",
+  campaign_ids: [ ... ],                 // при чанкинге — одна кампания
+  filters: [ ... ],                      // см. рецепты
+  page_limit: 3000,
+  goals: [ <goal_id> ],                  // если цели известны
+  attribution_models: [ "<код кампании>" ],
+  wait_seconds: 55
+})
 ```
 
-Обязательные заголовки отчётов (их выставляет обёртка MCP; если делаешь руками — учитывай):
-`processingMode: auto` (или офлайн с опросом), `returnMoneyInMicros: false` (чтобы деньги сразу в рублях; если обёртка не умеет — конвертируй скриптом), `skipReportHeader: true`, `skipReportSummary: true`.
-
-⚠️ `ReportName` должен быть **уникальным** в рамках аккаунта — добавляй timestamp/slug, иначе повторный запрос вернёт ошибку «отчёт с таким именем уже есть».
-
-⚠️ Считаем **С НДС** (`IncludeVAT: YES`) — это реальные деньги рекламодателя; политика единая для всего аудита, чтобы расход по площадкам/сегментам сходился с расходом по кампаниям.
+- **НДС не задаём** — `include_vat` по умолчанию `true`, а это и есть политика аудита (считаем реальные деньги рекламодателя, чтобы расход по площадкам сходился с расходом по кампаниям).
+- **Имя отчёта не задаём** — коннектор сам делает его уникальным.
+- **Деньги приходят в рублях.** Ничего не делим.
+- **Цели и атрибуция** — модель берётся из настроек конкретной кампании; правила и коды в `references/attribution.md`. При указании целей колонки конверсий именуются `Conversions_<goal>_<model>` — сверни их в один `Conversions` (сумма по целям **в рамках одной модели**) перед прогоном анализаторов.
 
 ---
 
 ## Рецепт 1: Площадки РСЯ (Шаг 4)
 
-```json
-{
-  "FieldNames": [
-    "CampaignName", "CampaignId", "AdNetworkType", "Placement",
-    "Device", "LocationOfPresenceName",
-    "Impressions", "Clicks", "Ctr", "Cost", "AvgCpc",
-    "Conversions", "ConversionRate", "CostPerConversion",
-    "Revenue", "BounceRate"
-  ],
-  "SelectionCriteria": {
-    "Filter": [
-      { "Field": "AdNetworkType", "Operator": "EQUALS", "Values": ["AD_NETWORK"] },
-      { "Field": "Impressions", "Operator": "GREATER_THAN", "Values": ["0"] }
-    ]
-  }
-}
+```
+fields: [
+  "CampaignName", "CampaignId", "AdNetworkType", "Placement",
+  "Impressions", "Clicks", "Ctr", "Cost", "AvgCpc",
+  "Conversions", "ConversionRate", "CostPerConversion",
+  "Revenue", "BounceRate", "AvgPageviews"
+],
+filters: [
+  { field: "AdNetworkType", operator: "EQUALS",       values: ["AD_NETWORK"] },
+  { field: "Clicks",        operator: "GREATER_THAN", values: ["0"] }
+],
+page_limit: 3000
 ```
 
-- Группировка по `Placement` идёт автоматически от набора полей. `Device` и `LocationOfPresenceName` дробят каждую площадку на под-строки — `analyze_placements.py` сворачивает их обратно до уровня площадки, а разбивку держит как контекст «почему» (`by_device` / `by_geo`).
-- **С НДС:** `IncludeVAT: YES` (как весь аудит). `ReportName` уникален — добавляй timestamp/slug.
-- Фильтр `Impressions > 0` отсекает площадки без показов. Анализатор сам дублирует фильтры `AD_NETWORK` и `Impressions > 0` на своей стороне — на случай, если они не применились.
-- Если есть цели — добавь `Goals` и `AttributionModels` в params; поля конверсий разобьются по целям/моделям (`Conversions_<goal>_<model>`) — сверни их в один `Conversions` (сумма) перед прогоном анализатора.
-- `BounceRate` придёт только при связке с Метрикой — иначе пусто (см. ограничение №2 в `mcp-tools-map.md`); поведение по площадке надёжнее тянуть из Метрики (`metrika_api.py --preset placements`).
-- Полный ruleset порогов по этим полям — `references/rsya-minus-rules.md`; ядро — `scripts/analyze_placements.py`.
+- Группировка по `Placement` идёт автоматически от набора полей.
+- ⚠️ **`Device` и `LocationOfPresenceName` в этот набор НЕ добавляй.** Каждый из них дробит любую площадку на десятки подстрок и раздувает отчёт в разы. Разбивку «почему» собирай **вторым узким проходом** только по топ-20 площадкам-кандидатам (`filters` по `Placement` `IN`), и только если она реально нужна для вывода.
+- Фильтр `Clicks > 0` отсекает площадки без трафика. Анализатор дублирует фильтры `AD_NETWORK` и `Impressions > 0` на своей стороне — на случай, если они не применились.
+- `BounceRate` и `AvgPageviews` — это и есть поведение по площадке, которое раньше тянули из Метрики. Приходят при привязанном счётчике; пусто → сигнал по отказам молчит, вывод строим по расходу и конверсиям.
+- Полный ruleset порогов — `references/rsya-minus-rules.md`; ядро — `scripts/analyze_placements.py`.
 
 ## Рецепт 2: Срез по устройствам (Шаг 5)
 
-```json
-{
-  "FieldNames": [
-    "Device", "CampaignName",
-    "Impressions", "Clicks", "Cost",
-    "Conversions", "ConversionRate", "CostPerConversion"
-  ]
-}
+```
+fields: [
+  "Device", "CampaignName",
+  "Impressions", "Clicks", "Cost",
+  "Conversions", "ConversionRate", "CostPerConversion",
+  "BounceRate", "AvgPageviews"
+],
+filters: [ { field: "Clicks", operator: "GREATER_THAN", values: ["0"] } ],
+page_limit: 500
 ```
 
 `Device`: `DESKTOP / MOBILE / TABLET / SMART_TV`.
 
 ## Рецепт 3: Пол и возраст (Шаг 5)
 
-```json
-{
-  "FieldNames": [
-    "Gender", "Age", "CampaignName",
-    "Clicks", "Cost", "Conversions", "CostPerConversion"
-  ]
-}
+```
+fields: [
+  "Gender", "Age", "CampaignName",
+  "Clicks", "Cost", "Conversions", "CostPerConversion",
+  "BounceRate", "AvgPageviews"
+],
+filters: [ { field: "Clicks", operator: "GREATER_THAN", values: ["0"] } ],
+page_limit: 500
 ```
 
 `Gender`: `GENDER_MALE / GENDER_FEMALE`. `Age`: `AGE_0_17 / AGE_18_24 / AGE_25_34 / AGE_35_44 / AGE_45_54 / AGE_55` (диапазоны могут отдаваться с суффиксами — сверяйся с ответом).
 
 ## Рецепт 4: География (Шаг 5)
 
-```json
-{
-  "FieldNames": [
-    "LocationOfPresenceName", "CampaignName",
-    "Clicks", "Cost", "Conversions", "CostPerConversion"
-  ]
-}
+```
+fields: [
+  "LocationOfPresenceName", "CampaignName",
+  "Clicks", "Cost", "Conversions", "CostPerConversion",
+  "BounceRate", "AvgPageviews"
+],
+filters: [ { field: "Clicks", operator: "GREATER_THAN", values: ["0"] } ],
+page_limit: 500
 ```
 
-`LocationOfPresenceName` — регион присутствия пользователя (где он физически). Есть ещё `TargetingLocationName` — регион таргетинга. Для корректировок по гео обычно интересен присутствие.
+`LocationOfPresenceName` — регион присутствия пользователя (где он физически), приходит **именем** («Москва», «Санкт-Петербург»). Есть ещё `TargetingLocationName` — регион таргетинга. Для корректировок по гео обычно интересно присутствие.
+
+Справочник регионов звать не нужно: имя региона у тебя уже есть, а корректировку маркетолог ставит в интерфейсе, выбирая регион из списка по названию — числовой `region_id` в рекомендации не требуется.
 
 ## Рецепт 5: Время суток (Шаг 5)
 
-```json
-{
-  "FieldNames": [
-    "HourOfDay", "CampaignName",
-    "Clicks", "Cost", "Conversions", "CostPerConversion"
-  ]
-}
+```
+fields: [
+  "HourOfDay", "CampaignName",
+  "Clicks", "Cost", "Conversions", "CostPerConversion"
+],
+filters: [ { field: "Clicks", operator: "GREATER_THAN", values: ["0"] } ],
+page_limit: 500
 ```
 
-Можно добавить `DayOfWeek` для недельного паттерна. ⚠️ Некоторые срезы несовместимы с методом `bytime` — используй обычный CUSTOM_REPORT.
-
----
-
-## Рецепт 6: Справочник регионов (`dictionaries_regions`) — расшифровка гео
-
-Это **не** CUSTOM_REPORT, а справочник (`Dictionaries.get`, `DictionaryNames: ["GeoRegions"]`), но логически он часть гео-анализа Шага 5, поэтому держим рецепт рядом.
-
-### Когда он нужен (и когда НЕ нужен)
-
-- **НЕ нужен**, если гео-срез собран Рецептом 4: поле `LocationOfPresenceName` уже отдаёт **имя** региона («Москва», «Санкт-Петербург»). Для простого «где тратим / где конвертим» справочник не требуется.
-- **Нужен**, когда:
-  1. рекомендуешь корректировку по гео — корректировки в Директе ставятся по **числовому `region_id`**, а отчёт дал только имя; нужно имя → id;
-  2. надо **свернуть города в регион/округ** (агрегировать расход уровня города до области) — для этого нужна иерархия `ParentId`;
-  3. отчёт где-то вернул числовой id вместо имени и его надо расшифровать.
-
-### Вызов — один раз, в кэш
-
-```
-yandex_direct_dictionaries_regions()   // без параметров; вернёт всё дерево регионов
-```
-
-Справочник большой (~3 МБ, тысячи строк). Поэтому:
-1. **Тяни один раз за весь аудит** и сразу сохраняй в `direct-audits/<slug>/_regions_cache.json`.
-2. **Никогда не читай файл целиком в рассуждение** — только ищи по нему нужные регионы (см. ниже).
-3. На повторных шагах бери из кэша, **не перезапрашивай API** (ошибочный/лишний вызов тоже жжёт квоту, см. бюджет квот в `mcp-tools-map.md`).
-
-### Структура ответа
-
-Каждый регион — объект примерно такого вида (точные имена полей сверь с ответом MCP):
-
-```json
-{
-  "GeoRegionId": 213,
-  "GeoRegionName": "Москва",
-  "GeoRegionType": "City",
-  "ParentId": 1
-}
-```
-
-- `GeoRegionType` — уровень: `World / Country / Region / Administrative area / City / Village / City district` и т.п. (набор строк может отличаться — ориентируйся на ответ).
-- `ParentId` — id родителя, по нему строится иерархия: Москва (213) → Московская область (1) → Россия (225) → Мир (0).
-- Полезные ориентиры: `225` = Россия, `213` = Москва, `2` = Санкт-Петербург, `1` = Москва и область.
-
-### Поиск по кэшу (имя → id и обратно)
-
-Не загружай весь файл — ищи точечно. Через `jq`:
-
-```bash
-# имя → id (учитывая, что имя может встречаться у нескольких регионов)
-jq '.[] | select(.GeoRegionName=="Москва") | {GeoRegionId, GeoRegionType, ParentId}' _regions_cache.json
-
-# id → имя
-jq '.[] | select(.GeoRegionId==213)' _regions_cache.json
-
-# все города внутри региона (по ParentId)
-jq '.[] | select(.ParentId==1) | .GeoRegionName' _regions_cache.json
-```
-
-(Путь к массиву зависит от того, как обёртка MCP завернула ответ — если регионы лежат под ключом, добавь его: `.regions[] | ...` или `.result.Regions[] | ...`.) Без `jq` подойдёт обычный греп по имени региона прямо в кэш-файле — он плоский, имя и id рядом.
-
-### Подводные камни
-
-- **Присутствие vs таргетинг.** `LocationOfPresenceName` — где пользователь физически (для корректировок по гео обычно нужен он). Есть ещё `TargetingLocationName` — регион таргетинга кампании. Не путай при джойне.
-- **Неуникальные имена.** Одно имя может относиться к разным регионам (город и одноимённая область, тёзки в разных странах). Различай по `GeoRegionType` и `ParentId`, а не по одному имени.
-- **Дубли www / вложенность** к регионам не относятся, но при сворачивании городов в область проверь, что не складываешь один и тот же расход дважды (город уже входит в область).
+Можно добавить `DayOfWeek` для недельного паттерна — но помни, что он умножает число строк на 7.
 
 ---
 
@@ -190,20 +118,10 @@ jq '.[] | select(.ParentId==1) | .GeoRegionName' _regions_cache.json
 
 **Срезы:** `CampaignId, CampaignName, CampaignType, AdGroupId, AdGroupName, AdId, Device, Age, Gender, IncomeGrade, LocationOfPresenceName, TargetingLocationName, Placement, AdNetworkType, Slot, CriteriaType, MatchType, Query, MatchedKeyword, Criterion, HourOfDay, DayOfWeek`.
 
-**Фильтры (Operator):** `EQUALS, NOT_EQUALS, IN, NOT_IN, LESS_THAN, GREATER_THAN, STARTS_WITH_IGNORE_CASE` и др. Пример полезного фильтра «расход больше нуля»:
-```json
-{ "Field": "Cost", "Operator": "GREATER_THAN", "Values": ["0"] }
-```
+**Операторы фильтров:** `EQUALS, NOT_EQUALS, IN, NOT_IN, LESS_THAN, GREATER_THAN, STARTS_WITH_IGNORE_CASE` и др.
 
-**Цели и атрибуция** (если считаем конверсии): в `params` добавь
-```json
-"Goals": ["<goal_id>"],
-"AttributionModels": ["<модель из кампании>"]
-```
-до 10 целей за запрос. При указании целей колонки конверсий именуются по схеме `Conversions_<goal>_<model>`.
-
-⚠️ **Модель не хардкодь и определяй отдельно для каждой кампании.** Подставляй Direct-код модели **из настроек самой кампании** (Шаг 1); если в кампании не задана — `LSCCD` (последний значимый, кросс-девайс). Ту же модель применяй и в Метрике (через единый словарь `metrika-integration.md` → раздел «Атрибуция»), чтобы срезы Директа и Метрики пересекались по одной логике. Допустимые коды: `FC/LC/LSC/LYDC/FCCD/LCCD/LSCCD/LYDCCD/AUTO`.
+**Поведенческие поля** (`BounceRate, AvgPageviews, Bounces, Sessions`) и **конверсионные** (`Conversions, ConversionRate, CostPerConversion, Revenue, Profit, GoalsRoi`) наполняются только при привязанном счётчике и настроенных целях — см. `references/attribution.md`.
 
 ## Доступность полей
 
-Поля чувствительны к регистру и со временем меняются. Перед хардкодом сверяйся с живым списком полей: `yandex.com/dev/direct/doc/ru/reports/fields-list`. По ЕПК (`UNIFIED_CAMPAIGN`) часть полей уровня критериев может не отдаваться. Если отчёт вернул ошибку по полю — убери его и повтори, не долби API в цикле (каждая ошибка ~20 баллов).
+Поля чувствительны к регистру и со временем меняются. Перед хардкодом сверяйся с живым списком: `yandex.com/dev/direct/doc/ru/reports/fields-list`. По ЕПК (`UNIFIED_CAMPAIGN`) часть полей уровня критериев может не отдаваться. Если отчёт вернул ошибку по полю — убери его и повтори **один раз**, не долби API в цикле (каждая ошибка ~20 баллов).

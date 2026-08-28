@@ -1,0 +1,13 @@
+CampaignName	CampaignId	AdNetworkType	Placement	Impressions	Clicks	Ctr	Cost	AvgCpc	Conversions	ConversionRate	CostPerConversion	Revenue	BounceRate	AvgPageviews
+РСЯ-Основная	333	AD_NETWORK	avito.ru	52000	410	0.79	8200.00	20.00	6	1.46	1366.67	42000.00	28.40	3.10
+РСЯ-Основная	333	AD_NETWORK	games-portal.xyz	140000	980	0.70	5900.00	6.02	0	0.00	0.00	0.00	87.20	1.02
+РСЯ-Основная	333	AD_NETWORK	dsp.smart-mob-app	96000	1240	1.29	7400.00	5.97	0	0.00	0.00	0.00	91.50	1.01
+РСЯ-Основная	333	AD_NETWORK	mail.ru	38000	290	0.76	5100.00	17.59	4	1.38	1275.00	28000.00	33.70	2.80
+РСЯ-Основная	333	AD_NETWORK	free-download-films.top	210000	2100	1.00	9800.00	4.67	0	0.00	0.00	0.00	94.10	1.00
+РСЯ-Основная	333	AD_NETWORK	yandex.ru	61000	520	0.85	9900.00	19.04	9	1.73	1100.00	63000.00	26.90	3.40
+РСЯ-Основная	333	AD_NETWORK	com.weather.widget	74000	1580	2.14	6300.00	3.99	0	0.00	0.00	0.00	89.80	1.03
+РСЯ-Доп	444	AD_NETWORK	drive2.ru	22000	180	0.82	3100.00	17.22	2	1.11	1550.00	9000.00	41.20	2.10
+РСЯ-Доп	444	AD_NETWORK	pikabu.ru	31000	240	0.77	3600.00	15.00	1	0.42	3600.00	4200.00	52.60	1.90
+РСЯ-Доп	444	AD_NETWORK	adult-stream.click	88000	910	1.03	4200.00	4.62	0	0.00	0.00	0.00	96.30	1.00
+РСЯ-Доп	444	AD_NETWORK	kinopoisk.ru	18000	140	0.78	2400.00	17.14	0	0.00	0.00	0.00	38.90	2.40
+РСЯ-Доп	444	AD_NETWORK	sport-live.ru	9000	42	0.47	700.00	16.67	0	0.00	0.00	0.00	35.10	2.20

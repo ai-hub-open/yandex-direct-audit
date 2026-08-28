@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-render_report.py — собирает красивый PDF-отчёт аудита из findings.json.
+render_report.py — собирает HTML-отчёт аудита из findings.json.
 
-Путь: findings.json -> HTML (встроенный CSS, стиль «дашборд») -> печать в PDF
-через уже установленный Chrome/Edge (headless). Внешних pip-пакетов не требует.
+Путь: findings.json -> один самодостаточный HTML (встроенный CSS, стиль «дашборд»,
+вёрстка под печать A4). Ни pip-пакетов, ни браузера, ни сети не требует — поэтому
+работает и в песочнице Claude Desktop, где ничего этого нет.
+
+Нужен PDF — открыть готовый файл в браузере и Ctrl+P -> Сохранить как PDF.
 
 Использование:
     python -m scripts.render_report --input direct-audits/<slug>/findings.json
-    python -m scripts.render_report --input <...>/findings.json --output <...>.pdf --open
-
-Если браузер не найден или печать не удалась — HTML всё равно сохраняется рядом,
-его можно открыть в браузере и напечатать в PDF вручную (Ctrl+P -> Сохранить как PDF).
+    python -m scripts.render_report --input <...>/findings.json --output <...>.html
 """
 
 import argparse
 import html
 import json
 import os
-import shutil
-import subprocess
 import sys
-import tempfile
+
+# Консоль Windows по умолчанию не в UTF-8, а итоговые сообщения — на русском.
+# Переключаем потоки вывода, чтобы скрипт не падал на печати пути к отчёту
+# (сам HTML и так пишется в UTF-8). На поведение рендера это не влияет.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 # ---------------------------------------------------------------- оформление
 
@@ -39,6 +45,20 @@ html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body {
   font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   color: #1a232e; font-size: 11px; line-height: 1.5; margin: 0;
+  background: #fff;
+}
+
+/* На экране файл читают в браузере: даём поля, фон и чуть крупнее кегль.
+   На печати всё это снимается и работает вёрстка @page под A4. */
+@media screen {
+  body { background: #eef1f5; font-size: 12.5px; }
+  .page { max-width: 210mm; margin: 0 auto; padding: 26px 30px 60px;
+          background: #fff; min-height: 100vh;
+          box-shadow: 0 0 0 1px #dde3ea, 0 2px 18px rgba(26,35,46,.07); }
+}
+@media print {
+  body { background: #fff; }
+  .page { max-width: none; margin: 0; padding: 0; box-shadow: none; }
 }
 h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: .2px; }
 h2 { font-size: 15px; margin: 26px 0 12px; padding-bottom: 6px;
@@ -360,12 +380,15 @@ def build_html(data):
         )
 
     return """<!DOCTYPE html>
-<html lang="ru"><head><meta charset="utf-8"><title>Аудит Яндекс.Директа</title>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Аудит Яндекс.Директа</title>
 <style>{css}</style></head><body>
+<div class="page">
 <div class="head">
   <h1>Аудит Яндекс.Директа</h1>
   <p class="period">{period}</p>
-  <p class="sub">Аккаунт: {title}</p>
+  <p class="sub">Аккаунт: {title}{login}</p>
   <p class="kpi-line">Цель (KPI): {kpi}</p>
 </div>
 
@@ -382,9 +405,12 @@ def build_html(data):
 
 <div class="foot">Отчёт подготовлен в режиме «только чтение». Скилл ничего не менял в аккаунте —
 все пункты внедряются вручную. Решение по каждому пункту за маркетологом.</div>
+</div>
 </body></html>""".format(
         css=CSS,
         title=esc(meta.get("slug", "проект")),
+        login=(" · логин {}".format(esc(meta["client_login"]))
+               if meta.get("client_login") else ""),
         period=period_line,
         kpi=esc(kpi_line),
         metrics=render_metrics(meta.get("summary")),
@@ -395,76 +421,13 @@ def build_html(data):
     )
 
 
-# ---------------------------------------------------------------- печать PDF
-
-
-def find_browser():
-    names = ["chrome", "chrome.exe", "msedge", "msedge.exe",
-             "google-chrome", "chromium", "chromium-browser"]
-    for n in names:
-        p = shutil.which(n)
-        if p:
-            return p
-    candidates = [
-        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
-        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
-        os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
-        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        "/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium",
-    ]
-    for p in candidates:
-        if p and os.path.exists(p):
-            return p
-    return None
-
-
-def html_to_pdf(html_text, pdf_path):
-    """Печатает HTML в PDF через headless-браузер. Возвращает (ok, browser_or_error)."""
-    browser = find_browser()
-    if not browser:
-        return False, "браузер не найден"
-
-    workdir = tempfile.mkdtemp(prefix="audit_pdf_")
-    html_tmp = os.path.join(workdir, "report.html")
-    pdf_tmp = os.path.join(workdir, "report.pdf")          # ASCII-путь для надёжности
-    profile = os.path.join(workdir, "profile")
-    with open(html_tmp, "w", encoding="utf-8") as fh:
-        fh.write(html_text)
-
-    url = "file:///" + html_tmp.replace("\\", "/")
-    cmd = [
-        browser, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
-        "--no-first-run", "--no-default-browser-check",
-        "--user-data-dir=" + profile,
-        "--print-to-pdf=" + pdf_tmp, url,
-    ]
-    try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    except Exception as e:                                  # noqa: BLE001
-        return False, "сбой запуска браузера: {}".format(e)
-
-    if not os.path.exists(pdf_tmp) or os.path.getsize(pdf_tmp) == 0:
-        return False, "PDF не создан (код {}): {}".format(res.returncode, (res.stderr or "")[:300])
-
-    os.makedirs(os.path.dirname(os.path.abspath(pdf_path)), exist_ok=True)
-    shutil.move(pdf_tmp, pdf_path)
-    try:
-        shutil.rmtree(workdir, ignore_errors=True)
-    except Exception:                                       # noqa: BLE001
-        pass
-    return True, browser
-
-
 # ---------------------------------------------------------------- main
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Сборка PDF-отчёта аудита из findings.json")
+    ap = argparse.ArgumentParser(description="Сборка HTML-отчёта аудита из findings.json")
     ap.add_argument("--input", required=True, help="путь к findings.json")
-    ap.add_argument("--output", help="путь к PDF (по умолчанию АУДИТ_<slug>.pdf рядом с input)")
-    ap.add_argument("--open", action="store_true", help="открыть PDF после сборки")
+    ap.add_argument("--output", help="путь к HTML (по умолчанию АУДИТ_<slug>.html рядом с input)")
     args = ap.parse_args()
 
     with open(args.input, encoding="utf-8") as fh:
@@ -472,27 +435,17 @@ def main():
 
     slug = data.get("meta", {}).get("slug", "audit")
     base = os.path.dirname(os.path.abspath(args.input))
-    pdf_path = args.output or os.path.join(base, "АУДИТ_{}.pdf".format(slug))
-    html_path = os.path.splitext(pdf_path)[0] + ".html"
+    html_path = args.output or os.path.join(base, "АУДИТ_{}.html".format(slug))
 
-    html_text = build_html(data)
+    out_dir = os.path.dirname(os.path.abspath(html_path))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
     with open(html_path, "w", encoding="utf-8") as fh:
-        fh.write(html_text)
+        fh.write(build_html(data))
 
-    ok, info = html_to_pdf(html_text, pdf_path)
-    if ok:
-        print("PDF готов: {}".format(pdf_path))
-        print("Браузер:   {}".format(info))
-        print("HTML рядом: {}".format(html_path))
-        if args.open:
-            try:
-                os.startfile(pdf_path)                      # type: ignore[attr-defined]
-            except AttributeError:
-                subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", pdf_path])
-    else:
-        print("Не удалось собрать PDF: {}".format(info), file=sys.stderr)
-        print("HTML сохранён: {} — открой его в браузере и Ctrl+P → Сохранить как PDF.".format(html_path))
-        sys.exit(2)
+    print("Отчёт готов: {}".format(html_path))
+    print("Открой в браузере. Нужна печатная версия — Ctrl+P → Сохранить как PDF (вёрстка под A4).")
 
 
 if __name__ == "__main__":

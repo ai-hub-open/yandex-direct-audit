@@ -196,9 +196,10 @@ def main() -> None:
     ap.add_argument("--top", type=int, default=50,
                     help="сколько строк отдать в ranked-срезе")
     ap.add_argument("--money-in-micros", dest="micros", action="store_true",
-                    default=True, help="деньги в ответе в микро (дефолт)")
+                    default=False,
+                    help="деньги в отчёте в микро — делить на 1e6 (для ручных выгрузок)")
     ap.add_argument("--money-in-rub", dest="micros", action="store_false",
-                    help="деньги в ответе уже в рублях")
+                    help="деньги уже в рублях (дефолт; коннектор отдаёт рубли)")
     ap.add_argument("--out", default=None, help="куда писать JSON (иначе stdout)")
     args = ap.parse_args()
 
