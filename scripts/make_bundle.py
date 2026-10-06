@@ -52,6 +52,7 @@ EXCLUDE_FILES = [
 REQUIRED = [
     "SKILL.md",
     "references/mcp-tools-map.md",
+    "references/metrika-tools-map.md",
     "references/attribution.md",
     "references/custom-report-recipes.md",
     "subagents/search-queries.md",
