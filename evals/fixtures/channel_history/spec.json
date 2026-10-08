@@ -1,0 +1,45 @@
+{
+  "site": "example.ru",
+  "period": "2026-07-01..2026-07-30",
+  "lead_definition": {
+    "goal_ids": [
+      123,
+      456
+    ],
+    "names": [
+      "Заявка",
+      "Звонок"
+    ],
+    "how": "ключевые цели стратегий кампаний"
+  },
+  "thresholds": {
+    "min_clicks": 30,
+    "min_days": 14,
+    "target_cpa": 3000,
+    "expensive_ratio": 1.5
+  },
+  "created_by": "yandex-direct-audit (фикстура)",
+  "rows": [
+    {
+      "channel": "vk_ads",
+      "campaign_type": "—",
+      "status": "ran",
+      "spend": 50000,
+      "clicks": null,
+      "leads": 0,
+      "source": "client",
+      "note": "весна 2026, со слов клиента"
+    },
+    {
+      "channel": "yandex_direct",
+      "campaign_type": "rsya",
+      "account": "login-1",
+      "status": "never_ran",
+      "spend": 0,
+      "clicks": 0,
+      "leads": 0,
+      "source": "direct",
+      "note": "не прошла модерацию — медицина без лицензии"
+    }
+  ]
+}

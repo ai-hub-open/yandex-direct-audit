@@ -173,6 +173,26 @@
         "Не подставляет «весь аккаунт» как дефолт без ответа",
         "Без ответа по кабинету или кампаниям останавливается и не запрашивает отчёты по кампаниям"
       ]
+    },
+    {
+      "id": 13,
+      "prompt": "Выгрузи историю каналов по кабинету login-1 за июль 2026 — для стратегии. Лидом считаем заявку и звонок, целевой CPA 3000 ₽. VK весной пробовали, 50 тыс. ₽, заявок не было.",
+      "expected_output": "Быстрый выход «история каналов»: кабинет подтверждён явно, период и определение лида взяты из запроса (не подставлены), пороги показаны. Дневной отчёт Директа по кампаниям + типы из 01_account_map.json сворачиваются scripts/channel_history.py build; VK — ручной строкой со слов клиента; черновик без показов — never_ran с вопросом о причине. Выводы совпадают с фикстурой evals/fixtures/channel_history: Поиск — works, ЕПК — no_data, РСЯ — no_leads, ретаргет — expensive, VK — no_leads, черновик РСЯ — never_ran.",
+      "files": [
+        "evals/fixtures/channel_history/spec.json",
+        "evals/fixtures/channel_history/campaigns_daily_rub.tsv",
+        "evals/fixtures/channel_history/campaign_types.json"
+      ],
+      "expectations": [
+        "Подтверждает кабинет явно и не запускает полный аудит",
+        "Не подставляет период и определение лида сам — берёт из запроса или спрашивает",
+        "Показывает пороги «мало данных» и «дорого» и даёт их поправить",
+        "Считает выводы скриптом scripts/channel_history.py build, а не вручную",
+        "Каждая строка имеет verdict_reason с числами и порогом",
+        "VK записан со source: client и spend 50000; черновик — status never_ran, вывода «не работает» нет",
+        "Пишет channel_history.json + channel_history.md; json проходит scripts/channel_history.py validate",
+        "Ничего не пишет в аккаунт"
+      ]
     }
   ]
 }
