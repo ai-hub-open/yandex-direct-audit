@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""changes_log.py — журнал правок аккаунта для режима ВЕДЕНИЯ (append-only).
+"""changes_log.py — журнал правок аккаунта (append-only) для точечного режима и ведения.
 
-Используется только в режиме ведения (см. references/lead-write-safety.md).
+Используется там, где скилл пишет в аккаунт: точечный режим (workspace —
+direct-audits/<slug>) и режим ведения (workspace — lead/<slug>). Правила записи —
+references/lead-write-safety.md.
 Ведёт <workspace>/changes_log.jsonl — по одной строке на каждую правку,
 залитую в аккаунт Директа, с before/after для отката.
 
@@ -20,6 +22,9 @@
       --status applied --note "чистка площадок РСЯ"
 
   python -m scripts.changes_log rollback-plan --workspace lead/acme --cycle 2026-08-28
+
+Windows PowerShell 5.1 срезает двойные кавычки внутри аргументов: '["a.ru"]' дойдёт
+как [a.ru] и запишется строкой, а не списком. Экранируй их: '[\\"a.ru\\"]'.
 """
 from __future__ import annotations
 
@@ -28,6 +33,16 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+
+# Windows-консоль по умолчанию cp1252/cp866 — без этого падают --help (кириллица
+# в описаниях) и вывод ✅/⚠️. Хуже всего с record: строка уже записана в журнал,
+# а печать подтверждения роняет процесс с кодом 1 — агент решит, что запись не
+# удалась, и запишет правку повторно. Сам журнал и так пишется в UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 LOG_NAME = "changes_log.jsonl"
 REVERSIBLE = "reversible"
@@ -168,7 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     r = sub.add_parser("record", help="дописать одну правку")
-    r.add_argument("--workspace", required=True, help="папка проекта ведения, напр. lead/<slug>")
+    r.add_argument("--workspace", required=True,
+                   help="папка журнала: lead/<slug> (ведение) или direct-audits/<slug> (точечный режим)")
     r.add_argument("--cycle", required=True, help="id цикла (дата), напр. 2026-08-28")
     r.add_argument("--object-type", required=True,
                    help="campaign|adgroup|ad|keyword|bidmodifier|...")

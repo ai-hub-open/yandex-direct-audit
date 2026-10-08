@@ -93,6 +93,19 @@ yandex_metrika_report_bytime({ counter_id, date1: "56daysAgo", date2: "yesterday
   filters: "ym:s:lastTrafficSource=='ad'", top_keys: 10 })
 ```
 
+### M7. Источники трафика (история каналов, `channel-history.md`)
+
+Визиты и достижения целей по рекламным системам и UTM-меткам — показывает не-Директ каналы (VK, Telegram, посевы), если ссылки размечены. Расходов в ответе нет: их даёт маркетолог.
+
+```
+yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
+  dimensions: ["ym:s:lastTrafficSource","ym:s:lastAdvEngine"],
+  metrics: ["ym:s:visits","ym:s:goal<ID>reaches"], limit: 50, sort: ["-ym:s:visits"] })
+# разметка UTM — тот же отчёт с dimensions: ["ym:s:lastUTMSource","ym:s:lastUTMMedium"]
+```
+
+Поле не принято API → см. «Правила и фолбеки» ниже, отметь в `limitations`.
+
 ---
 
 ## Атрибуция Директ ↔ Метрика
