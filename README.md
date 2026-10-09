@@ -59,7 +59,10 @@
 ```
 yandex-direct-audit/
 ├── SKILL.md
+├── VERSION                          (версия скилла — по ней он сообщает о новой)
 ├── README.md
+├── LICENSE                          (Apache-2.0)
+├── .claude-plugin/plugin.json       (манифест плагина Claude Code, в бандл не входит)
 ├── references/
 │   ├── mcp-tools-map.md              (подключение коннектора, тулы, правила отчётов)
 │   ├── attribution.md               (модели атрибуции, цели, кросс-чек воронки)
@@ -122,7 +125,31 @@ yandex-direct-audit/
    `https://direct-mcp.aihub.click.ru/c/<логин Директа>/<токен Click.ru>/<ID пользователя>`
    Третий сегмент — только для мастер-аккаунта Click.ru. ⚠️ Адрес равносилен паролю: токен лежит
    в URL и оседает в логах прокси. Не пересылать, при утечке — отозвать токен в Click.ru.
-2. **Скилл.** `python scripts/make_bundle.py` → `yandex-direct-audit.zip` → загрузить в
-   Settings → Capabilities → Skills. Бандл не включает `.env`, `docs/`, `parked/` и рабочие
-   папки аудитов.
+2. **Скилл.** Скачать `yandex-direct-audit.zip` из
+   [релизов](https://github.com/ai-hub-open/yandex-direct-audit/releases/latest) (или собрать:
+   `python scripts/make_bundle.py`) → загрузить в Settings → Capabilities → Skills. Бандл не
+   включает `.env`, `docs/`, `parked/` и рабочие папки аудитов.
 3. Проверить, что в сессии появились тулы `yandex_direct_*`, и сказать «сделай аудит Директа».
+
+## Установка в Claude Code — плагином, с обновлениями
+
+1. **Коннектор** — тот же адрес, что выше (с теми же предостережениями):
+   `claude mcp add --transport http yandex-direct "<адрес коннектора>"`.
+2. **Скилл** — в сессии Claude Code:
+
+   ```
+   /plugin marketplace add ai-hub-open/claude-plugins
+   /plugin install yandex-direct-audit@ai-hub-open
+   ```
+
+   Скилл вызывается как `/yandex-direct-audit:yandex-direct-audit` или просьбой своими словами
+   («сделай аудит Директа»). Автообновление: `/plugin` → **Marketplaces** → `ai-hub-open` →
+   **Enable auto-update**; без него — `/plugin marketplace update ai-hub-open`.
+
+Рабочие папки `direct-audits/` и `lead/` создаются в текущей папке, а не внутри плагина: папка
+плагина при обновлении заменяется целиком. Если раньше скилл лежал папкой в `~/.claude/skills/`,
+удалите её, иначе скилл будет загружаться дважды.
+
+## Лицензия
+
+[Apache-2.0](LICENSE).
