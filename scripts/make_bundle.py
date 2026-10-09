@@ -32,11 +32,13 @@ SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXCLUDE_DIRS = {
     ".git",            # история
     "__pycache__",     # мусор
+    ".pytest_cache",   # мусор: раньше уезжал в бандл
     "direct-audits",   # данные клиентов
     "docs",            # внутренние планы и спеки
     "parked",          # Метрика: в Desktop не работает (нет сети)
     ".claude",
     ".github",
+    ".claude-plugin",  # манифест плагина Claude Code — в бандле не нужен
 }
 
 # Файлы по маскам.
