@@ -119,32 +119,66 @@ yandex-direct-audit/
 Только стандартная библиотека Python 3 — ни pip-пакетов, ни браузера, ни сети. Это осознанное
 ограничение: скрипты исполняются в песочнице Claude Desktop, где ничего этого нет.
 
-## Установка в Claude Desktop
+## Коннекторы
 
-1. **Коннектор.** Settings → Connectors → Add custom connector, в поле URL:
-   `https://direct-mcp.aihub.click.ru/c/<логин Директа>/<токен Click.ru>/<ID пользователя>`
-   Третий сегмент — только для мастер-аккаунта Click.ru. ⚠️ Адрес равносилен паролю: токен лежит
-   в URL и оседает в логах прокси. Не пересылать, при утечке — отозвать токен в Click.ru.
-2. **Скилл.** Скачать `yandex-direct-audit.zip` из
-   [релизов](https://github.com/ai-hub-open/yandex-direct-audit/releases/latest) (или собрать:
-   `python scripts/make_bundle.py`) → загрузить в Settings → Capabilities → Skills. Бандл не
-   включает `.env`, `docs/`, `parked/` и рабочие папки аудитов.
-3. Проверить, что в сессии появились тулы `yandex_direct_*`, и сказать «сделай аудит Директа».
+Скиллу нужен коннектор **Яндекс Директа**; коннектор **Яндекс Метрики** — по желанию (цели, время
+на сайте, посадочные, потеря кликов). Серверы работают на стороне click.ru: в Claude добавляется
+только адрес.
 
-## Установка в Claude Code — плагином, с обновлениями
-
-1. **Коннектор** — тот же адрес, что выше (с теми же предостережениями):
-   `claude mcp add --transport http yandex-direct "<адрес коннектора>"`.
-2. **Скилл** — в сессии Claude Code:
+1. **Токен click.ru.** Профиль [click.ru/userinfo.html](https://click.ru/userinfo.html) → поле
+   **API Token** → скопировать или **Создать**. Токен выпускайте в том аккаунте click.ru, где
+   подключены кабинеты Директа. «Пересоздать» — только при утечке: старые подключения перестанут
+   работать.
+2. **Адрес Директа** ([подробнее](https://help.click.ru/7738)):
 
    ```
-   /plugin marketplace add ai-hub-open/claude-plugins
-   /plugin install yandex-direct-audit@ai-hub-open
+   https://direct-mcp.aihub.click.ru/c/<токен click.ru>
    ```
 
-   Скилл вызывается как `/yandex-direct-audit:yandex-direct-audit` или просьбой своими словами
-   («сделай аудит Директа»). Автообновление: `/plugin` → **Marketplaces** → `ai-hub-open` →
-   **Enable auto-update**; без него — `/plugin marketplace update ai-hub-open`.
+   - `…/c/<токен click.ru>/<кабинет>` — закрепить один кабинет: логин Директа, название или ID
+     в click.ru (`@` → `%40`, пробел → `%20`).
+   - `…/y/<OAuth-токен Яндекса>` — кабинет, созданный напрямую в Яндексе, без click.ru.
+
+   Старая форма `/c/<логин>/<токен>/<ID пользователя>` ещё принимается сервером, но для новых
+   подключений не используется.
+3. **Адрес Метрики** (по желанию):
+
+   ```
+   https://metrika-mcp.aihub.click.ru/c/<токен click.ru>
+   ```
+
+   `…/c/<токен click.ru>/<аккаунт>` — один аккаунт; `…/y/<OAuth-токен Яндекса>` — напрямую
+   в Яндекс. Для форм с `/c/` в click.ru должна быть подключена интеграция Метрики.
+4. **Добавить в Claude.**
+   - Claude Desktop / claude.ai: **Settings → Connectors → Add custom connector** → любое имя →
+     адрес → **Continue** → **Add**, затем перезапустить Claude Desktop.
+   - Claude Code: `claude mcp add --scope user --transport http yandex-direct "<адрес коннектора>"`.
+5. **Проверка:** в сессии появились тулы `yandex_direct_*`; попросите «покажи мои кабинеты».
+
+⚠️ **Адрес коннектора равносилен паролю:** токен в нём открывает Директ, Вордстат, Метрику и VK
+Рекламу этого аккаунта click.ru. Не пересылайте его; при утечке пересоздайте токен в профиле
+click.ru.
+
+## Установка скилла
+
+**Claude Desktop и Claude Code — плагином, с обновлениями.** Пошаговая инструкция (Git, каталог,
+автообновление) — в [README каталога ai-hub-open](https://github.com/ai-hub-open/claude-plugins#установка-в-claude-desktop).
+Коротко: **Settings → Plugins → + → Add marketplace → Add from repository** →
+`https://github.com/ai-hub-open/claude-plugins` → установить `yandex-direct-audit` → включить
+автообновление каталога. В Claude Code то же командами:
+
+```
+/plugin marketplace add ai-hub-open/claude-plugins
+/plugin install yandex-direct-audit@ai-hub-open
+```
+
+Скилл работает в режимах Cowork и Code: скажите «сделай аудит Директа» — он подключится сам, или
+вызовите `/yandex-direct-audit:yandex-direct-audit`.
+
+**Архивом (claude.ai, любой тариф).** На [странице релизов](https://github.com/ai-hub-open/yandex-direct-audit/releases)
+в блоке **Assets** верхнего релиза скачайте `yandex-direct-audit.zip` (не «Source code») или
+соберите сами: `python scripts/make_bundle.py`. Загрузите в **Customize → Skills → + → Upload a
+skill**. Бандл не включает `.env`, `docs/`, `parked/` и рабочие папки аудитов.
 
 Рабочие папки `direct-audits/` и `lead/` создаются в текущей папке, а не внутри плагина: папка
 плагина при обновлении заменяется целиком. Если раньше скилл лежал папкой в `~/.claude/skills/`,
