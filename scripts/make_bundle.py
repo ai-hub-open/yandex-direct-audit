@@ -27,6 +27,9 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Desktop и claude.ai принимают архив, в котором лежит одна папка скилла, а SKILL.md — внутри неё.
+# Архив с файлами прямо в корне (так собирались 1.2.0 и 1.2.1) не устанавливается.
+SKILL_NAME = "yandex-direct-audit"
 
 # Каталоги, которые не едут в бандл целиком.
 EXCLUDE_DIRS = {
@@ -124,7 +127,19 @@ def main():
 
     with zipfile.ZipFile(args.output, "w", zipfile.ZIP_DEFLATED) as zf:
         for rel in rels:
-            zf.write(os.path.join(SKILL_DIR, rel), arcname=rel)
+            zf.write(os.path.join(SKILL_DIR, rel), arcname=SKILL_NAME + "/" + rel)
+
+    # Проверяем уже готовый архив, а не список: ловим ровно то, что увидит диалог загрузки.
+    with zipfile.ZipFile(args.output) as zf:
+        names = zf.namelist()
+    stray = [n for n in names if not n.startswith(SKILL_NAME + "/")]
+    if stray or SKILL_NAME + "/SKILL.md" not in names:
+        os.remove(args.output)
+        print("Архив собран неправильно — нужна одна папка {}/ с SKILL.md внутри.".format(SKILL_NAME),
+              file=sys.stderr)
+        for n in stray:
+            print("  - вне папки: {}".format(n), file=sys.stderr)
+        sys.exit(1)
 
     size_kb = os.path.getsize(args.output) / 1024.0
     print("Бандл готов: {} ({:.0f} КБ, файлов: {})".format(args.output, size_kb, len(rels)))
