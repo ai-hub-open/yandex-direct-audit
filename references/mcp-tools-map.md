@@ -53,7 +53,7 @@
 | `yandex_direct_campaigns_get` | Инвентаризация: типы, статусы, стратегии, счётчики, бюджеты, минусы | 0/1 |
 | `yandex_direct_adgroups_get` | Вложенность групп (при необходимости) | 1 |
 | `yandex_direct_ads_get` | Состав объявлений в группах (при необходимости) | 6 |
-| `yandex_direct_keywords_get` | Ключи для проверки кросс-минусовки и дедупликации | 6 |
+| `yandex_direct_keywords_get` | Ключи для проверки кросс-минусовки и дедупликации; с `only_autotargeting: true` — категории и бренды автотаргетинга групп ЕПК | 1/6 |
 | `yandex_direct_bidmodifiers_get` | Текущие корректировки ставок | 5 |
 | `yandex_direct_report_campaign` | Статистика по кампаниям | 0/2 |
 | `yandex_direct_report_ad` | Статистика по объявлениям | 6 |
@@ -62,7 +62,7 @@
 
 ## ЗАПРЕЩЁННЫЕ тулы (скилл их не вызывает никогда)
 
-`campaigns_add/update/delete/suspend/resume`, `adgroups_add/update/delete`, `ads_add/update/delete/suspend/resume/moderate`, `adimages_add`, `keywords_add/update/delete/suspend/resume`, `keywordbids_set`, `bidmodifiers_set/delete/demographics/devices/regional/retargeting`, `sitelinks_add/delete`, `adextensions_add/delete`.
+`campaigns_add/update/delete/suspend/resume`, `adgroups_add/update/delete`, `ads_add/update/delete/suspend/resume/moderate`, `adimages_add`, `keywords_add/update/delete/suspend/resume`, `keywordbids_set`, `autotargeting_set`, `bidmodifiers_set/delete/demographics/devices/regional/retargeting`, `sitelinks_add/delete`, `adextensions_add/delete`.
 
 Если по логике задачи кажется, что нужно «просто отключить площадку» — **нет**. Это строка в отчёте-рекомендации. Внедряет маркетолог.
 
@@ -131,10 +131,10 @@
 | Отчёты `report_*` (`Cost`, `AvgCpc`, `CostPerConversion`, `Revenue`) | **рубли** | ничего не делим: коннектор запрашивает отчёты с `returnMoneyInMicros: false` |
 | Настройки `campaigns_get` (`WeeklySpendLimit`, `BidCeiling`, `AverageCpa`, `AverageCpc`, `DailyBudget.Amount`, `Value` в `PriorityGoals`) | **микро** | делить на 1 000 000: `AverageCpa 800000000` = 800 ₽ |
 | Ставки `keywords_get` / `keywordbids_get` (`Bid`, `SearchBid`, `ContextBid`) | **микро** | делить на 1 000 000: `300000` = 0,30 ₽ |
-| Запись (`campaigns_update`, `keywordbids_set`) — точечный режим и ведение | **микро** | рубли × 1 000 000; в превью показывай рубли |
+| Запись (`campaigns_update`, `keywordbids_set`, `autotargeting_set`) — точечный режим и ведение | **рубли** | передавай рубли как есть, **не умножай**: коннектор сам переводит в микро (`search_bid: 17` → в кабинете 17 ₽, проверено живьём 23.10.2026). В `dry_run` тело запроса уже в микро — это норма |
 | `Crr`, корректировки ставок | проценты | не деньги, не делим |
 
-Перепутать единицы = ошибиться в миллион раз: «лимит 10 млрд ₽» в отчёте или ставка 300 000 ₽ при записи.
+Перепутать единицы = ошибиться в миллион раз: «лимит 10 млрд ₽» в отчёте или ставка в миллион раз выше задуманной при записи.
 
 Анализаторы (`normalize_report.py`, `analyze_placements.py`, `run_analysis.py`) настроены на рубли по умолчанию — флаг денег им передавать не надо. Флаг `--money-in-micros` существует только для ручных выгрузок из интерфейса Директа, где деньги бывают в микро (1 000 000 = 1 ₽).
 
