@@ -60,6 +60,12 @@
 | `yandex_direct_report_search_queries` | Поисковые запросы → минус-кандидаты | 3 |
 | `yandex_direct_report_custom` | Произвольные срезы: площадки, устройства, гео, пол/возраст, часы | 4/5 |
 
+**Статус модерации объявления — только из поля `Status` самого объявления** (`ads_get`):
+`DRAFT` — черновик, на модерацию не отправлялся; `MODERATION` — на проверке; `PREACCEPTED`,
+`ACCEPTED`, `REJECTED` — результат проверки. Статусы уточнений, быстрых ссылок и картинок — не про
+объявление: принятое уточнение не значит, что объявление прошло модерацию. Когда и как Директ
+отправляет объявления на модерацию, не додумывай — называй статус как есть.
+
 ## ЗАПРЕЩЁННЫЕ тулы (скилл их не вызывает никогда)
 
 `campaigns_add/update/delete/suspend/resume`, `adgroups_add/update/delete`, `ads_add/update/delete/suspend/resume/moderate`, `adimages_add`, `keywords_add/update/delete/suspend/resume`, `keywordbids_set`, `autotargeting_set`, `bidmodifiers_set/delete/demographics/devices/regional/retargeting`, `sitelinks_add/delete`, `adextensions_add/delete`.
