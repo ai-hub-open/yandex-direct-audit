@@ -10,6 +10,33 @@
 
 Нет ни одного тула → `metrika_ok: false`, аудит идёт по Директу, непроверенное уходит в `limitations`.
 
+## Две модели — два вопроса
+
+Визиты в Метрике зависят от модели атрибуции, и разница большая. Живой счётчик, 30 дней, тот же фильтр
+рекламного трафика (16.11.2026): **87 922** визита по последнему переходу против **126 909** по последнему
+значимому — в 1,44 раза больше. Последний значимый переход записывает на кампанию и возвраты по закладкам
+и внутренним переходам, хотя кликами они не были. Ни одно число не «неверное» — они отвечают на разные вопросы.
+
+| Вопрос | Модель (`attribution`) | Рецепты | Подпись в отчёте |
+|---|---|---|---|
+| Сколько кликов стали визитами (потеря кликов) | `last` | M3 | «визиты по клику (последний переход)» |
+| Поведение, посадочные, устройства, источники, динамика — то, что маркетолог сверит с кабинетом Метрики | `cross_device_last_significant` | M3б, M4–M7 | «визиты по последнему значимому переходу, все устройства — как в Метрике по умолчанию» |
+
+**Правила:**
+
+- **`attribution` в каждом вызове `report` и `report_bytime` — явно**, по таблице. Группировки и фильтры пиши
+  **без модели в имени** (`ym:s:TrafficSource`, `ym:s:DirectClickOrder`): сервер сам подставит модель из
+  `attribution`, и имя не разойдётся с параметром.
+- **Модель в отчёте подписывай по полю `attribution` ответа**, а не по тому, что собирался запросить. Пришла
+  не та модель — это сбой рецепта: в `limitations`, число не используй.
+- **Не дели показатели из разных моделей.** Визиты по клику (M3) — только для доли дошедших (визиты ÷ клики
+  Директа). Знаменатель конверсий и CR — клики Директа, конверсии и деньги — из отчёта Директа по модели
+  кампании (`references/attribution.md`). Визиты Метрики знаменателем конверсий Директа не бывают.
+- Сравниваешь с числами маркетолога из интерфейса Метрики — бери модель `cross_device_last_significant`
+  и назови её рядом с числом.
+
+---
+
 ## Разрешённые (read-only) тулы
 
 | Тул | Зачем | Шаг |
@@ -52,45 +79,57 @@ yandex_metrika_direct_clients_get({ counter_id })
 - Логин кабинета среди `chief_login` → связка в порядке.
 - Список пуст / логина нет → **medium «проверить связку»**. Пустой список бывает и тогда, когда у аккаунта Метрики, через который подключён коннектор, просто нет доступа к кабинету Директа. Повышай до high, только если конверсии в отчётах Директа пустые при ненулевых кликах.
 
-### M3. Потеря кликов и время на сайте по кампаниям
+### M3. Потеря кликов по кампаниям — модель `last`
 
 ```
 yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
-  dimensions: ["ym:s:lastDirectClickOrder"],
-  metrics: ["ym:s:visits","ym:s:bounceRate","ym:s:pageDepth",
-            "ym:s:avgVisitDurationSeconds","ym:s:goal<ID>reaches"],
-  filters: "ym:s:lastTrafficSource=='ad'", limit: 100 })
+  dimensions: ["ym:s:DirectClickOrder"],
+  metrics: ["ym:s:visits"],
+  filters: "ym:s:TrafficSource=='ad'", limit: 1000 })
 ```
 
-Даты — **те же**, что у отчёта Директа на Шаге 2. Доля дошедших = визиты ÷ клики Директа: не меньше 80% — норма; 60–80% — medium; меньше 60% при 100+ кликах — high.
+Даты — **те же**, что у отчёта Директа на Шаге 2. Доля дошедших = визиты по клику ÷ клики Директа: не меньше 80% — норма; 60–80% — medium; меньше 60% при 100+ кликах — high. В отчёте эти визиты подписаны «визиты по клику», в другие расчёты не идут.
+
+### M3б. Поведение по кампаниям — модель `cross_device_last_significant`
+
+```
+yandex_metrika_report({ counter_id, date1, date2, attribution: "cross_device_last_significant",
+  dimensions: ["ym:s:DirectClickOrder"],
+  metrics: ["ym:s:visits","ym:s:users","ym:s:bounceRate","ym:s:pageDepth",
+            "ym:s:avgVisitDurationSeconds","ym:s:goal<ID>reaches"],
+  filters: "ym:s:TrafficSource=='ad'", limit: 1000 })
+```
+
+Отказы, глубина, время на сайте — как маркетолог увидит их в Метрике. Визитов на человека (`visits ÷ users`) заметно больше 1,5 — кампания собирает возвраты своих же пользователей; это наблюдение, а не потеря денег.
 
 ### M4. Посадочные страницы
 
 ```
-yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
+yandex_metrika_report({ counter_id, date1, date2, attribution: "cross_device_last_significant",
   dimensions: ["ym:s:startURL"],
   metrics: ["ym:s:visits","ym:s:bounceRate","ym:s:pageDepth",
             "ym:s:avgVisitDurationSeconds","ym:s:anyGoalConversionRate"],
-  filters: "ym:s:lastTrafficSource=='ad'", limit: 50, sort: ["-ym:s:visits"] })
+  filters: "ym:s:TrafficSource=='ad'", limit: 50, sort: ["-ym:s:visits"] })
 ```
 
-Для разреза «кампания → посадочная» добавь `ym:s:lastDirectClickOrder` в `dimensions` и подними `limit` до 200. Страница меньше ~50 визитов — «мало данных».
+Для разреза «кампания → посадочная» добавь `ym:s:DirectClickOrder` в `dimensions` и подними `limit` до 200. Страница меньше ~50 визитов — «мало данных».
 
 ### M5. Устройства (для форка Шага 5)
 
 ```
-yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
+yandex_metrika_report({ counter_id, date1, date2, attribution: "cross_device_last_significant",
   dimensions: ["ym:s:deviceCategory"],
   metrics: ["ym:s:visits","ym:s:bounceRate","ym:s:avgVisitDurationSeconds","ym:s:goal<ID>reaches"],
-  filters: "ym:s:lastTrafficSource=='ad'", limit: 10 })
+  filters: "ym:s:TrafficSource=='ad'", limit: 10 })
 ```
 
 ### M6. Динамика (ведение, Фаза A)
 
 ```
 yandex_metrika_report_bytime({ counter_id, date1: "56daysAgo", date2: "yesterday", group: "week",
+  attribution: "cross_device_last_significant",
   metrics: ["ym:s:visits","ym:s:bounceRate","ym:s:goal<ID>reaches"],
-  filters: "ym:s:lastTrafficSource=='ad'", top_keys: 10 })
+  filters: "ym:s:TrafficSource=='ad'", top_keys: 10 })
 ```
 
 ### M7. Источники трафика (история каналов, `channel-history.md`)
@@ -98,11 +137,27 @@ yandex_metrika_report_bytime({ counter_id, date1: "56daysAgo", date2: "yesterday
 Визиты и достижения целей по рекламным системам и UTM-меткам — показывает не-Директ каналы (VK, Telegram, посевы), если ссылки размечены. Расходов в ответе нет: их даёт маркетолог.
 
 ```
-yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
-  dimensions: ["ym:s:lastTrafficSource","ym:s:lastAdvEngine"],
+yandex_metrika_report({ counter_id, date1, date2, attribution: "cross_device_last_significant",
+  dimensions: ["ym:s:TrafficSource","ym:s:SourceEngine"],
   metrics: ["ym:s:visits","ym:s:goal<ID>reaches"], limit: 50, sort: ["-ym:s:visits"] })
-# разметка UTM — тот же отчёт с dimensions: ["ym:s:lastUTMSource","ym:s:lastUTMMedium"]
+# разметка UTM — тот же отчёт с dimensions: ["ym:s:UTMSource","ym:s:UTMMedium"]
 ```
+
+### M8. Клики и расход Директа в Метрике (`ym:ad:*`) — только если отчёт Директа недоступен
+
+Деньги и клики по умолчанию берём из Директа. Метрика отдаёт их отдельным пространством имён `ym:ad:*`:
+
+```
+yandex_metrika_direct_clients_get({ counter_id })                 # chief_login → direct_client_logins
+yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
+  direct_client_logins: ["<chief_login>"],
+  dimensions: ["ym:ad:directOrder"],
+  metrics: ["ym:ad:clicks","ym:ad:RUBAdCost"], limit: 1000 })
+```
+
+Клики и расход от модели не зависят; `ym:ad:visits` зависит — для визитов есть M3 и M3б.
+
+Пустой ответ при живых кампаниях — у аккаунта Метрики нет доступа к этому кабинету или логин не тот; это не «расходов нет».
 
 Поле не принято API → см. «Правила и фолбеки» ниже, отметь в `limitations`.
 
@@ -110,7 +165,7 @@ yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
 
 ## Атрибуция Директ ↔ Метрика
 
-С 25.06.2026 Метрика считает старые модели по аналогам и сама переводит устаревшие имена (`lastsign…`, `first…`) в группировках и фильтрах. Поэтому в `dimensions`/`filters` пиши шаблон `ym:s:<модель>…` той же моделью, что в `attribution`.
+С 25.06.2026 Метрика считает старые модели по аналогам и сама переводит устаревшие имена (`lastsign…`, `first…`) в группировках и фильтрах. Поэтому в `dimensions`/`filters` пиши имена без модели (`ym:s:TrafficSource`) — сервер подставит модель из `attribution`. Таблица ниже — для сверки с моделью кампании в Директе; какую модель брать в рецептах Метрики, задаёт раздел «Две модели — два вопроса».
 
 | Директ | Метрика (`attribution`) |
 |---|---|
@@ -121,8 +176,33 @@ yandex_metrika_report({ counter_id, date1, date2, attribution: "last",
 
 Конверсии Метрики и Директа **не сводим в ноль**: Метрика считает к дате визита, Директ — к дате клика.
 
+## Имена метрик и группировок
+
+Бери имена **только из рецептов и таблицы этого файла**; не придумывай и не перебирай наугад. Проверено на
+живом сервере 16.11.2026:
+
+| Пространство | Метрики | Группировки |
+|---|---|---|
+| визиты `ym:s:*` | `ym:s:visits`, `ym:s:users`, `ym:s:bounceRate`, `ym:s:pageDepth`, `ym:s:avgVisitDurationSeconds`, `ym:s:anyGoalConversionRate`, `ym:s:goal<ID>reaches`, `ym:s:goal<ID>conversionRate` | `ym:s:TrafficSource`, `ym:s:SourceEngine`, `ym:s:DirectClickOrder`, `ym:s:UTMSource`, `ym:s:UTMMedium`, `ym:s:UTMCampaign`, `ym:s:startURL`, `ym:s:deviceCategory`, `ym:s:regionCity`, `ym:s:date` |
+| Директ `ym:ad:*` (нужен `direct_client_logins`) | `ym:ad:clicks`, `ym:ad:visits`, `ym:ad:RUBAdCost`, `ym:ad:RUBAdCostPerVisit` | `ym:ad:directOrder`, `ym:ad:directPhraseOrCond`, `ym:ad:directPlatformType` |
+
+**`ym:s:*` и `ym:ad:*` в одном запросе не смешивай** — Метрика отклонит их как несовместимые. Имён
+`ym:ad:cost`, `impressions`, `expense`, `spend` нет: сервер отвечает `400 invalid_parameter`.
+
 ## Правила и фолбеки
 
+- **`attribution` не убирай никогда.** Ошибка в вызове с `attribution` → проверь имена группировок и фильтра
+  (без модели в имени) и повтори **один раз** с той же моделью. Второй сбой — в `limitations`; отчёт без
+  явной модели не строй.
+- **Ошибка `400 invalid_parameter` — неверное имя или сочетание, а не «данных нет».** Сверь имя с таблицей
+  выше и повтори один раз. Не вышло — в `limitations`: «не удалось запросить <что>: сервер не принял
+  параметр». Вывод «Метрика этого не отдаёт» или «расходов нет» из такой ошибки **не делай**.
+- **Проверочный запрос подтверждает только то, что в нём было.** `preset` и другие метрики не доказывают,
+  что есть клики, расход или нужная модель; смотри `columns` и `attribution` ответа.
+- **Пришли не все строки** — в ответе есть `note`, `total_rows` больше числа строк: догрузи тем же запросом
+  с `offset` из `note` (`limit` до 1000). Не догрузил — по кампаниям пиши «данные по N из M строк»;
+  `totals` уже посчитаны по всем строкам, их можно брать как итог.
+- Ошибка по необязательной метрике (`goal<ID>reaches`, `avgVisitDurationSeconds`) → убери **эту метрику** и
+  повтори один раз; `attribution`, группировки и фильтр не трогай. Второй сбой — в `limitations`.
 - `sampled: true` на малом объёме → повтори с `accuracy: "full"` или помечай вывод «приблизительно».
-- Ошибка по полю/группировке → убери его и повтори один раз; второй сбой — в `limitations`.
 - Отчёты Метрики компактные, но всё равно ставь `limit` — ответ идёт через контекст.
